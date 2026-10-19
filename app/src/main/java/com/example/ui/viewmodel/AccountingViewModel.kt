@@ -123,7 +123,29 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     notes: String,
     onSuccess: () -> Unit
   ) {
+    if (type != "SALE" && type != "PURCHASE") {
+      showMessage("نوع الفاتورة غير صحيح")
+      return
+    }
+    if (items.isEmpty()) {
+      showMessage("أضف صنفًا واحدًا على الأقل قبل حفظ الفاتورة")
+      return
+    }
+    if (items.any { it.itemId <= 0L || !it.quantity.isFinite() || it.quantity <= 0.0 ||
+        !it.unitPrice.isFinite() || it.unitPrice < 0.0 || !it.total.isFinite() || it.total < 0.0 }) {
+      showMessage("تحقق من الأصناف والكميات والأسعار في الفاتورة")
+      return
+    }
+    if (listOf(discount, tax, otherFees, paidAmount).any { !it.isFinite() || it < 0.0 }) {
+      showMessage("لا يمكن إدخال مبالغ سالبة أو غير صالحة")
+      return
+    }
     val subtotal = items.sumOf { it.total }
+    val netTotal = subtotal - discount + tax + otherFees
+    if (!netTotal.isFinite() || netTotal < 0.0 || paidAmount > netTotal) {
+      showMessage("راجع الخصم والضريبة والرسوم والمبلغ المدفوع")
+      return
+    }
     val netTotal = (subtotal - discount + tax + otherFees).coerceAtLeast(0.0)
     val remaining = (netTotal - paidAmount).coerceAtLeast(0.0)
 
@@ -146,10 +168,15 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     )
 
     viewModelScope.launch {
-      repository.createInvoice(invoice, items)
-      val typeLabel = if (type == "SALE") "فاتورة بيع" else "فاتورة شراء"
-      showMessage("تم حفظ $typeLabel بنجاح وتحديث أرصدة المخزون")
-      onSuccess()
+      runCatching { repository.createInvoice(invoice, items) }
+        .onSuccess {
+          val typeLabel = if (type == "SALE") "فاتورة بيع" else "فاتورة شراء"
+          showMessage("تم حفظ $typeLabel بنجاح وتحديث أرصدة المخزون")
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر حفظ الفاتورة؛ لم يتم تأكيد نجاح العملية")
+        }
     }
   }
 
