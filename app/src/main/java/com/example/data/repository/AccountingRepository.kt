@@ -24,6 +24,7 @@ class AccountingRepository(
   suspend fun insertAccount(account: AccountEntity): Long {
     require(account.name.isNotBlank() && account.parentCategory.isNotBlank()) { "اسم الحساب والتصنيف مطلوبان" }
     require(account.balance.isFinite()) { "رصيد الحساب غير صالح" }
+    require(dao.getAccountByName(account.name) == null) { "يوجد حساب بالاسم نفسه" }
     return dao.insertAccount(account)
   }
   suspend fun updateAccount(account: AccountEntity) {
