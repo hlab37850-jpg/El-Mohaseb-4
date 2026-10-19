@@ -21,21 +21,48 @@ class AccountingRepository(
   // Accounts
   val allAccounts: Flow<List<AccountEntity>> = dao.getAllAccounts()
   fun getAccountsByCategory(cat: String): Flow<List<AccountEntity>> = dao.getAccountsByCategory(cat)
-  suspend fun insertAccount(account: AccountEntity): Long = dao.insertAccount(account)
-  suspend fun updateAccount(account: AccountEntity) = dao.updateAccount(account)
+  suspend fun insertAccount(account: AccountEntity): Long {
+    require(account.name.isNotBlank() && account.parentCategory.isNotBlank()) { "اسم الحساب والتصنيف مطلوبان" }
+    require(account.balance.isFinite()) { "رصيد الحساب غير صالح" }
+    return dao.insertAccount(account)
+  }
+  suspend fun updateAccount(account: AccountEntity) {
+    require(account.name.isNotBlank() && account.parentCategory.isNotBlank()) { "اسم الحساب والتصنيف مطلوبان" }
+    require(account.balance.isFinite()) { "رصيد الحساب غير صالح" }
+    dao.updateAccount(account)
+  }
   suspend fun deleteAccount(account: AccountEntity) = dao.deleteAccount(account)
 
   // Items
   val allItems: Flow<List<ItemEntity>> = dao.getAllItems()
   fun searchItems(query: String): Flow<List<ItemEntity>> = dao.searchItems(query)
-  suspend fun insertItem(item: ItemEntity): Long = dao.insertItem(item)
-  suspend fun updateItem(item: ItemEntity) = dao.updateItem(item)
+  suspend fun insertItem(item: ItemEntity): Long {
+    validateItem(item)
+    return dao.insertItem(item)
+  }
+  suspend fun updateItem(item: ItemEntity) {
+    validateItem(item)
+    dao.updateItem(item)
+  }
+
+  private fun validateItem(item: ItemEntity) {
+    require(item.name.isNotBlank() && item.code.isNotBlank() &&
+      item.category.isNotBlank() && item.unit.isNotBlank()) { "اسم الصنف ورمزه وتصنيفه ووحدته مطلوبة" }
+    require(listOf(item.costPrice, item.sellingPrice, item.openingQuantity, item.currentStock)
+      .all { it.isFinite() && it >= 0.0 }) { "أسعار الصنف وكمياته يجب أن تكون أرقامًا غير سالبة" }
+  }
   suspend fun deleteItem(item: ItemEntity) = dao.deleteItem(item)
 
   // Warehouses
   val allWarehouses: Flow<List<WarehouseEntity>> = dao.getAllWarehouses()
-  suspend fun insertWarehouse(warehouse: WarehouseEntity): Long = dao.insertWarehouse(warehouse)
-  suspend fun updateWarehouse(warehouse: WarehouseEntity) = dao.updateWarehouse(warehouse)
+  suspend fun insertWarehouse(warehouse: WarehouseEntity): Long {
+    require(warehouse.name.isNotBlank()) { "اسم المخزن مطلوب" }
+    return dao.insertWarehouse(warehouse)
+  }
+  suspend fun updateWarehouse(warehouse: WarehouseEntity) {
+    require(warehouse.name.isNotBlank()) { "اسم المخزن مطلوب" }
+    dao.updateWarehouse(warehouse)
+  }
   suspend fun deleteWarehouse(warehouse: WarehouseEntity) = dao.deleteWarehouse(warehouse)
 
   // Invoices
@@ -190,8 +217,19 @@ class AccountingRepository(
 
   // Currencies
   val allCurrencies: Flow<List<CurrencyEntity>> = dao.getAllCurrencies()
-  suspend fun insertCurrency(currency: CurrencyEntity): Long = dao.insertCurrency(currency)
-  suspend fun updateCurrency(currency: CurrencyEntity) = dao.updateCurrency(currency)
+  suspend fun insertCurrency(currency: CurrencyEntity): Long {
+    validateCurrency(currency)
+    return dao.insertCurrency(currency)
+  }
+  suspend fun updateCurrency(currency: CurrencyEntity) {
+    validateCurrency(currency)
+    dao.updateCurrency(currency)
+  }
+
+  private fun validateCurrency(currency: CurrencyEntity) {
+    require(currency.name.isNotBlank() && currency.symbol.isNotBlank()) { "اسم العملة ورمزها مطلوبان" }
+    require(currency.exchangeRate.isFinite() && currency.exchangeRate > 0.0) { "سعر الصرف يجب أن يكون رقمًا أكبر من صفر" }
+  }
   suspend fun deleteCurrency(currency: CurrencyEntity) = dao.deleteCurrency(currency)
 
   // Persisted application settings
@@ -209,7 +247,18 @@ class AccountingRepository(
 
   // Warehouse Operations
   val allOperations: Flow<List<WarehouseOperationEntity>> = dao.getAllWarehouseOperations()
-  suspend fun insertOperation(op: WarehouseOperationEntity): Long = dao.insertWarehouseOperation(op)
-  suspend fun updateOperation(op: WarehouseOperationEntity) = dao.updateWarehouseOperation(op)
+  suspend fun insertOperation(op: WarehouseOperationEntity): Long {
+    validateWarehouseOperation(op)
+    return dao.insertWarehouseOperation(op)
+  }
+  suspend fun updateOperation(op: WarehouseOperationEntity) {
+    validateWarehouseOperation(op)
+    dao.updateWarehouseOperation(op)
+  }
+
+  private fun validateWarehouseOperation(op: WarehouseOperationEntity) {
+    require(op.operationType.isNotBlank() && op.warehouseName.isNotBlank()) { "نوع العملية والمخزن مطلوبان" }
+    require(op.totalItems >= 0 && op.totalCost.isFinite() && op.totalCost >= 0.0) { "كمية العملية أو تكلفتها غير صالحة" }
+  }
   suspend fun deleteOperation(op: WarehouseOperationEntity) = dao.deleteWarehouseOperation(op)
 }
