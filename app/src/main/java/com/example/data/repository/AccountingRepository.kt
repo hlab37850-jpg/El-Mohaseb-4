@@ -77,21 +77,40 @@ class AccountingRepository(
     return invoiceId
   }
 
-  private fun validateInvoice(invoice: InvoiceEntity, items: List<InvoiceItemEntity>) {
+  private suspend fun validateInvoice(invoice: InvoiceEntity, items: List<InvoiceItemEntity>) {
     require(invoice.type == "SALE" || invoice.type == "PURCHASE") { "نوع الفاتورة غير صحيح" }
     require(items.isNotEmpty()) { "لا يمكن حفظ فاتورة بدون أصناف" }
     require(items.all {
       it.itemId > 0L && it.quantity.isFinite() && it.quantity > 0.0 &&
         it.unitPrice.isFinite() && it.unitPrice >= 0.0 &&
-        it.total.isFinite() && it.total >= 0.0
+        it.total.isFinite() && it.total >= 0.0 &&
+        kotlin.math.abs(it.total - it.quantity * it.unitPrice) <= 0.01
     }) { "بيانات الأصناف أو الكميات أو الأسعار غير صحيحة" }
+    val itemRecords = items.map { row ->
+      dao.getItemById(row.itemId) ?: throw IllegalArgumentException("أحد أصناف الفاتورة غير موجود في قاعدة البيانات")
+    }
+    if (invoice.type == "SALE" && !invoice.isReturn) {
+      items.forEachIndexed { index, row ->
+        require(itemRecords[index].currentStock >= row.quantity) {
+          "الكمية المتاحة غير كافية للصنف: ${itemRecords[index].name}"
+        }
+      }
+    }
+    if (invoice.isCredit) {
+      require(invoice.partyName.isNotBlank() && dao.getAccountByName(invoice.partyName) != null) {
+        "الحساب المرتبط بالفاتورة غير موجود في قاعدة البيانات"
+      }
+    }
     require(listOf(invoice.subtotal, invoice.discount, invoice.tax, invoice.otherFees,
       invoice.paidAmount, invoice.remainingAmount).all { it.isFinite() && it >= 0.0 }) {
       "توجد مبالغ غير صالحة في الفاتورة"
     }
-    require(invoice.remainingAmount + invoice.paidAmount <=
-      invoice.subtotal - invoice.discount + invoice.tax + invoice.otherFees + 0.000001) {
-      "المبالغ المدفوعة والمتبقية تتجاوز صافي الفاتورة"
+    val netTotal = invoice.subtotal - invoice.discount + invoice.tax + invoice.otherFees
+    require(netTotal >= 0.0 && kotlin.math.abs(invoice.remainingAmount + invoice.paidAmount - netTotal) <= 0.01) {
+      "إجمالي الفاتورة والمدفوع والمتبقي غير متطابق"
+    }
+    require(kotlin.math.abs(items.sumOf { it.total } - invoice.subtotal) <= 0.01) {
+      "مجموع تفاصيل الأصناف لا يطابق إجمالي الفاتورة"
     }
   }
 
