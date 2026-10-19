@@ -1,0 +1,6 @@
+{
+  "name": "محاسب سوفت",
+  "description": "تطبيق إدارة الحسابات والمخازن ونقاط البيع والفواتير والسندات والتقارير المالية",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

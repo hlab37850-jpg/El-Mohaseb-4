@@ -1,0 +1,210 @@
+package com.example.ui.screens
+
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Badge
+import androidx.compose.material.icons.filled.Category
+import androidx.compose.material.icons.filled.DisplaySettings
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Notifications
+import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Print
+import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Scale
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Divider
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import com.example.ui.theme.MohasebPrimaryBlue
+import com.example.ui.viewmodel.AccountingViewModel
+
+data class SettingItem(val title: String, val icon: ImageVector)
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun SettingsScreen(
+  viewModel: AccountingViewModel,
+  onBack: () -> Unit
+) {
+  var showCompanyProfileDialog by remember { mutableStateOf(false) }
+  var showPrinterDialog by remember { mutableStateOf(false) }
+
+  val settingsList = listOf(
+    SettingItem("البيانات الشخصية والشركة", Icons.Default.Person),
+    SettingItem("خيارات الطباعة", Icons.Default.Print),
+    SettingItem("خيارات الأمان وكلمات المرور", Icons.Default.Lock),
+    SettingItem("المستخدمين والصلاحيات", Icons.Default.Security),
+    SettingItem("التصنيفات", Icons.Default.Category),
+    SettingItem("مجموعة الصنف", Icons.Default.Badge),
+    SettingItem("وحدات القياس", Icons.Default.Scale),
+    SettingItem("خيارات حفظ البيانات والنسخ الاحتياطي", Icons.Default.Save),
+    SettingItem("الطابعة الحرارية (80mm / Bluetooth)", Icons.Default.Print),
+    SettingItem("الضريبة المضافة", Icons.Default.Tune),
+    SettingItem("طباعة باركود الأصناف", Icons.Default.QrCode),
+    SettingItem("خيارات الإشعارات", Icons.Default.Notifications),
+    SettingItem("خيارات أخرى ونقاط البيع", Icons.Default.DisplaySettings),
+    SettingItem("تفعيل الإشتراك", Icons.Default.Star)
+  )
+
+  Scaffold(
+    topBar = {
+      TopAppBar(
+        title = { Text("الإعدادات", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 18.sp) },
+        navigationIcon = {
+          IconButton(onClick = onBack, modifier = Modifier.testTag("back_from_settings")) {
+            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "رجوع", tint = Color.White)
+          }
+        },
+        colors = TopAppBarDefaults.topAppBarColors(containerColor = MohasebPrimaryBlue)
+      )
+    },
+    containerColor = Color(0xFFF8FAFC)
+  ) { padding ->
+    LazyColumn(
+      modifier = Modifier
+        .fillMaxSize()
+        .padding(padding)
+    ) {
+      items(settingsList) { item ->
+        Row(
+          modifier = Modifier
+            .fillMaxWidth()
+            .clickable {
+              when (item.title) {
+                "البيانات الشخصية والشركة" -> showCompanyProfileDialog = true
+                "الطابعة الحرارية (80mm / Bluetooth)" -> showPrinterDialog = true
+                else -> viewModel.showMessage("تم فتح: ${item.title}")
+              }
+            }
+            .padding(horizontal = 16.dp, vertical = 14.dp),
+          verticalAlignment = Alignment.CenterVertically
+        ) {
+          Icon(item.icon, contentDescription = item.title, tint = MohasebPrimaryBlue, modifier = Modifier.size(22.dp))
+          Spacer(modifier = Modifier.width(16.dp))
+          Text(item.title, fontSize = 13.5.sp, fontWeight = FontWeight.Medium, color = Color(0xFF1E293B), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+        }
+        Divider(color = Color(0xFFE2E8F0), thickness = 0.8.dp)
+      }
+    }
+  }
+
+  // Dialog: Company Profile (video 03:05)
+  if (showCompanyProfileDialog) {
+    var compName by remember { mutableStateOf("شركة المحاسب للتجارة العامة") }
+    var compAddress by remember { mutableStateOf("صنعاء - شارع الستين") }
+    var compPhone by remember { mutableStateOf("770000000") }
+    var compTax by remember { mutableStateOf("100234509") }
+
+    AlertDialog(
+      onDismissRequest = { showCompanyProfileDialog = false },
+      title = { Text("البيانات الشخصية وبيانات المنشأة", fontWeight = FontWeight.Bold, color = MohasebPrimaryBlue) },
+      text = {
+        Column {
+          OutlinedTextField(value = compName, onValueChange = { compName = it }, label = { Text("اسم المؤسسة / المتجر") }, modifier = Modifier.fillMaxWidth())
+          Spacer(modifier = Modifier.height(8.dp))
+          OutlinedTextField(value = compAddress, onValueChange = { compAddress = it }, label = { Text("العنوان") }, modifier = Modifier.fillMaxWidth())
+          Spacer(modifier = Modifier.height(8.dp))
+          OutlinedTextField(value = compPhone, onValueChange = { compPhone = it }, label = { Text("رقم التلفون") }, modifier = Modifier.fillMaxWidth())
+          Spacer(modifier = Modifier.height(8.dp))
+          OutlinedTextField(value = compTax, onValueChange = { compTax = it }, label = { Text("الرقم الضريبي") }, modifier = Modifier.fillMaxWidth())
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = {
+          viewModel.showMessage("تم حفظ بيانات المنشأة بنجاح")
+          showCompanyProfileDialog = false
+        }) {
+          Text("حفظ", fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showCompanyProfileDialog = false }) {
+          Text("إلغاء")
+        }
+      }
+    )
+  }
+
+  // Dialog: Printer Configuration (video 03:21)
+  if (showPrinterDialog) {
+    var thermalEnabled by remember { mutableStateOf(true) }
+    var autoCut by remember { mutableStateOf(true) }
+
+    AlertDialog(
+      onDismissRequest = { showPrinterDialog = false },
+      title = { Text("إعدادات الطابعة الحرارية", fontWeight = FontWeight.Bold, color = MohasebPrimaryBlue) },
+      text = {
+        Column {
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text("تفعيل الطابعة الحرارية عبر البلوتوث", fontSize = 14.sp)
+            Switch(checked = thermalEnabled, onCheckedChange = { thermalEnabled = it })
+          }
+          Spacer(modifier = Modifier.height(8.dp))
+          Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            Text("القطع التلقائي للورق بعد كل فاتورة", fontSize = 14.sp)
+            Switch(checked = autoCut, onCheckedChange = { autoCut = it })
+          }
+        }
+      },
+      confirmButton = {
+        TextButton(onClick = {
+          viewModel.showMessage("تم حفظ إعدادات الطابعة")
+          showPrinterDialog = false
+        }) {
+          Text("موافق", fontWeight = FontWeight.Bold)
+        }
+      },
+      dismissButton = {
+        TextButton(onClick = { showPrinterDialog = false }) {
+          Text("إلغاء")
+        }
+      }
+    )
+  }
+}
