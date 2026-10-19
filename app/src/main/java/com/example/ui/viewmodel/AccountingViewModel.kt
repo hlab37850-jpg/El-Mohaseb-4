@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.AccountEntity
+import com.example.data.model.AppSettingEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
@@ -78,11 +79,34 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     initialValue = emptyList()
   )
 
+  val allSettings: StateFlow<List<AppSettingEntity>> = repository.allSettings.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
   val allOperations: StateFlow<List<WarehouseOperationEntity>> = repository.allOperations.stateIn(
     scope = viewModelScope,
     started = SharingStarted.WhileSubscribed(5000),
     initialValue = emptyList()
   )
+
+  fun saveSettings(settings: Map<String, String>, onSuccess: () -> Unit = {}) {
+    if (settings.keys.any { it.isBlank() }) {
+      showMessage("تعذر حفظ إعداد غير صالح")
+      return
+    }
+    viewModelScope.launch {
+      runCatching { repository.saveSettings(settings) }
+        .onSuccess {
+          showMessage("تم حفظ الإعدادات")
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر حفظ الإعدادات")
+        }
+    }
+  }
 
   // Message / Notification Toast banner
   private val _userMessage = MutableStateFlow<String?>(null)
