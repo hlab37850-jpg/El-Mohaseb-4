@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.data.model.AccountEntity
+import com.example.data.model.AppSettingEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
@@ -149,6 +150,16 @@ interface AccountingDao {
 
   @Delete
   suspend fun deleteCurrency(currency: CurrencyEntity)
+
+  // App settings
+  @Query("SELECT * FROM app_settings ORDER BY settingKey ASC")
+  fun getAllSettings(): Flow<List<AppSettingEntity>>
+
+  @Query("SELECT * FROM app_settings WHERE settingKey = :key LIMIT 1")
+  suspend fun getSetting(key: String): AppSettingEntity?
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun upsertSettings(settings: List<AppSettingEntity>)
 
   // Warehouse Operations
   @Query("SELECT * FROM warehouse_operations ORDER BY id DESC")
