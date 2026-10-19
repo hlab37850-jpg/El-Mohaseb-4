@@ -4,7 +4,10 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 import com.example.data.model.AccountEntity
+import com.example.data.model.AppSettingEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
@@ -23,15 +26,24 @@ import kotlinx.coroutines.CoroutineScope
     InvoiceItemEntity::class,
     VoucherEntity::class,
     CurrencyEntity::class,
-    WarehouseOperationEntity::class
+    WarehouseOperationEntity::class,
+    AppSettingEntity::class
   ],
-  version = 1,
+  version = 2,
   exportSchema = false
 )
 abstract class MohasebDatabase : RoomDatabase() {
   abstract fun accountingDao(): AccountingDao
 
   companion object {
+    private val MIGRATION_1_2 = object : Migration(1, 2) {
+      override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+          "CREATE TABLE IF NOT EXISTS app_settings (settingKey TEXT NOT NULL, settingValue TEXT NOT NULL, PRIMARY KEY(settingKey))"
+        )
+      }
+    }
+
     @Volatile
     private var INSTANCE: MohasebDatabase? = null
 
@@ -42,8 +54,8 @@ abstract class MohasebDatabase : RoomDatabase() {
           MohasebDatabase::class.java,
           "mohaseb_soft_db"
         )
-          // Never silently delete a user's accounting data when a schema migration is missing.
-          // Add an explicit Migration before incrementing the database version.
+          // Preserve existing accounting data and migrate schema changes explicitly.
+          .addMigrations(MIGRATION_1_2)
           .build()
           .also { INSTANCE = it }
       }
