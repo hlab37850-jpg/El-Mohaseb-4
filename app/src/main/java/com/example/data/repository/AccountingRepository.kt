@@ -29,7 +29,17 @@ class AccountingRepository(
   suspend fun updateAccount(account: AccountEntity) {
     require(account.name.isNotBlank() && account.parentCategory.isNotBlank()) { "اسم الحساب والتصنيف مطلوبان" }
     require(account.balance.isFinite()) { "رصيد الحساب غير صالح" }
-    dao.updateAccount(account)
+    val previous = dao.getAccountById(account.id)
+      ?: throw IllegalArgumentException("الحساب المراد تعديله غير موجود")
+    val update: suspend () -> Unit = {
+      if (previous.name != account.name) {
+        require(dao.getAccountByName(account.name) == null) { "يوجد حساب آخر بالاسم نفسه" }
+        dao.renameInvoiceParty(previous.name, account.name)
+        dao.renameVoucherAccount(previous.name, account.name)
+      }
+      dao.updateAccount(account)
+    }
+    if (database != null) database.withTransaction { update() } else update()
   }
   suspend fun deleteAccount(account: AccountEntity) {
     require(account.balance == 0.0) { "لا يمكن حذف حساب له رصيد؛ صفّر الرصيد أو سوّه أولًا" }
