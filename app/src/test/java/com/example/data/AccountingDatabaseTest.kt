@@ -11,6 +11,7 @@ import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
 import com.example.data.model.ItemEntity
 import com.example.data.model.VoucherEntity
+import com.example.data.model.WarehouseEntity
 import com.example.data.repository.AccountingRepository
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -41,6 +42,10 @@ class AccountingDatabaseTest {
       .build()
     dao = db.accountingDao()
     repository = AccountingRepository(dao, db)
+    runBlocking {
+      dao.insertWarehouse(WarehouseEntity(name = "المخزن الرئيسي"))
+      dao.insertCurrency(CurrencyEntity(name = "محلي", symbol = "YR", subUnit = "جزء"))
+    }
   }
 
   @After
