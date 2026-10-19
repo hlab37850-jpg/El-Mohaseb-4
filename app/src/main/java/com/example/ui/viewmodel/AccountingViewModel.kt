@@ -142,6 +142,23 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     _userMessage.value = null
   }
 
+  private fun performDbAction(
+    successMessage: String,
+    onSuccess: () -> Unit = {},
+    action: suspend () -> Unit
+  ) {
+    viewModelScope.launch {
+      runCatching { action() }
+        .onSuccess {
+          showMessage(successMessage)
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر تنفيذ العملية في قاعدة البيانات")
+        }
+    }
+  }
+
   // Current Date string helper
   val todayFormatted: String
     get() = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
@@ -225,13 +242,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun deleteInvoice(invoice: InvoiceEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteInvoice(invoice: InvoiceEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف الفاتورة رقم ${invoice.invoiceNumber} وإرجاع الكميات للمخزن", onSuccess) {
       repository.deleteInvoice(invoice)
-      showMessage("تم حذف الفاتورة رقم ${invoice.invoiceNumber} وإرجاع الكميات للمخزن")
-      onSuccess()
     }
-  }
 
   // Voucher Creation & Deletion
   fun saveVoucher(
@@ -283,13 +297,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun deleteVoucher(voucher: VoucherEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteVoucher(voucher: VoucherEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف السند رقم ${voucher.voucherNumber} بنجاح", onSuccess) {
       repository.deleteVoucher(voucher)
-      showMessage("تم حذف السند رقم ${voucher.voucherNumber} بنجاح")
-      onSuccess()
     }
-  }
 
   // Accounts CRUD
   fun addAccount(
@@ -331,13 +342,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun deleteAccount(account: AccountEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteAccount(account: AccountEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف الحساب: ${account.name}", onSuccess) {
       repository.deleteAccount(account)
-      showMessage("تم حذف الحساب: ${account.name}")
-      onSuccess()
     }
-  }
 
   // Items CRUD
   fun addItem(
@@ -386,13 +394,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun deleteItem(item: ItemEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteItem(item: ItemEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف الصنف: ${item.name}", onSuccess) {
       repository.deleteItem(item)
-      showMessage("تم حذف الصنف: ${item.name}")
-      onSuccess()
     }
-  }
 
   // Warehouses CRUD
   fun addWarehouse(name: String, phone: String, address: String, onSuccess: () -> Unit) {
@@ -411,13 +416,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun deleteWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف المخزن: ${warehouse.name}", onSuccess) {
       repository.deleteWarehouse(warehouse)
-      showMessage("تم حذف المخزن: ${warehouse.name}")
-      onSuccess()
     }
-  }
 
   // Currencies CRUD
   fun addCurrency(name: String, symbol: String, subUnit: String, rate: Double, onSuccess: () -> Unit) {
@@ -438,13 +440,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun deleteCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف عملة: ${currency.name}", onSuccess) {
       repository.deleteCurrency(currency)
-      showMessage("تم حذف عملة: ${currency.name}")
-      onSuccess()
     }
-  }
 
   // Warehouse Operations CRUD
   fun addWarehouseOperation(
@@ -484,13 +483,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun deleteWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف العملية المخزنية #${op.operationNumber}", onSuccess) {
       repository.deleteOperation(op)
-      showMessage("تم حذف العملية المخزنية #${op.operationNumber}")
-      onSuccess()
     }
-  }
 }
 
 class AccountingViewModelFactory(private val repository: AccountingRepository) : ViewModelProvider.Factory {
