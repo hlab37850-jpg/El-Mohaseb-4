@@ -79,11 +79,24 @@ class AccountingRepository(
   val allWarehouses: Flow<List<WarehouseEntity>> = dao.getAllWarehouses()
   suspend fun insertWarehouse(warehouse: WarehouseEntity): Long {
     require(warehouse.name.isNotBlank()) { "اسم المخزن مطلوب" }
+    require(dao.getWarehouseByName(warehouse.name) == null) { "يوجد مخزن بالاسم نفسه" }
     return dao.insertWarehouse(warehouse)
   }
   suspend fun updateWarehouse(warehouse: WarehouseEntity) {
     require(warehouse.name.isNotBlank()) { "اسم المخزن مطلوب" }
-    dao.updateWarehouse(warehouse)
+    val previous = dao.getWarehouseById(warehouse.id)
+      ?: throw IllegalArgumentException("المخزن المراد تعديله غير موجود")
+    val update: suspend () -> Unit = {
+      if (previous.name != warehouse.name) {
+        require(dao.getWarehouseByName(warehouse.name) == null) { "يوجد مخزن آخر بالاسم نفسه" }
+        dao.renameInvoiceWarehouse(previous.name, warehouse.name)
+        dao.renameOperationWarehouse(previous.name, warehouse.name)
+        dao.renameOperationTargetWarehouse(previous.name, warehouse.name)
+        dao.renameActiveWarehouseSetting(previous.name, warehouse.name)
+      }
+      dao.updateWarehouse(warehouse)
+    }
+    if (database != null) database.withTransaction { update() } else update()
   }
   suspend fun deleteWarehouse(warehouse: WarehouseEntity) {
     require(dao.countInvoicesForWarehouse(warehouse.name) == 0 && dao.countOperationsForWarehouse(warehouse.name) == 0) {
@@ -248,11 +261,23 @@ class AccountingRepository(
   val allCurrencies: Flow<List<CurrencyEntity>> = dao.getAllCurrencies()
   suspend fun insertCurrency(currency: CurrencyEntity): Long {
     validateCurrency(currency)
+    require(dao.getCurrencyByName(currency.name) == null) { "يوجد عملة بالاسم نفسه" }
     return dao.insertCurrency(currency)
   }
   suspend fun updateCurrency(currency: CurrencyEntity) {
     validateCurrency(currency)
-    dao.updateCurrency(currency)
+    val previous = dao.getCurrencyById(currency.id)
+      ?: throw IllegalArgumentException("العملة المراد تعديلها غير موجودة")
+    val update: suspend () -> Unit = {
+      if (previous.name != currency.name) {
+        require(dao.getCurrencyByName(currency.name) == null) { "يوجد عملة أخرى بالاسم نفسه" }
+        dao.renameInvoiceCurrency(previous.name, currency.name)
+        dao.renameVoucherCurrency(previous.name, currency.name)
+        dao.renameActiveCurrencySetting(previous.name, currency.name)
+      }
+      dao.updateCurrency(currency)
+    }
+    if (database != null) database.withTransaction { update() } else update()
   }
 
   private fun validateCurrency(currency: CurrencyEntity) {
