@@ -41,6 +41,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +67,8 @@ fun SettingsScreen(
 ) {
   var showCompanyProfileDialog by remember { mutableStateOf(false) }
   var showPrinterDialog by remember { mutableStateOf(false) }
+  val savedSettings by viewModel.allSettings.collectAsState()
+  val settingsMap = savedSettings.associate { it.settingKey to it.settingValue }
 
   val settingsList = listOf(
     SettingItem("البيانات الشخصية والشركة", Icons.Default.Person),
@@ -111,7 +114,7 @@ fun SettingsScreen(
               when (item.title) {
                 "البيانات الشخصية والشركة" -> showCompanyProfileDialog = true
                 "الطابعة الحرارية (80mm / Bluetooth)" -> showPrinterDialog = true
-                else -> viewModel.showMessage("تم فتح: ${item.title}")
+                else -> viewModel.showMessage("هذه الوظيفة غير مربوطة بقاعدة البيانات بعد: ${item.title}")
               }
             }
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -128,10 +131,10 @@ fun SettingsScreen(
 
   // Dialog: Company Profile (video 03:05)
   if (showCompanyProfileDialog) {
-    var compName by remember { mutableStateOf("شركة المحاسب للتجارة العامة") }
-    var compAddress by remember { mutableStateOf("صنعاء - شارع الستين") }
-    var compPhone by remember { mutableStateOf("770000000") }
-    var compTax by remember { mutableStateOf("100234509") }
+    var compName by remember(showCompanyProfileDialog, settingsMap) { mutableStateOf(settingsMap["company_name"].orEmpty()) }
+    var compAddress by remember(showCompanyProfileDialog, settingsMap) { mutableStateOf(settingsMap["company_address"].orEmpty()) }
+    var compPhone by remember(showCompanyProfileDialog, settingsMap) { mutableStateOf(settingsMap["company_phone"].orEmpty()) }
+    var compTax by remember(showCompanyProfileDialog, settingsMap) { mutableStateOf(settingsMap["company_tax_number"].orEmpty()) }
 
     AlertDialog(
       onDismissRequest = { showCompanyProfileDialog = false },
@@ -149,8 +152,18 @@ fun SettingsScreen(
       },
       confirmButton = {
         TextButton(onClick = {
-          viewModel.showMessage("تم حفظ بيانات المنشأة بنجاح")
-          showCompanyProfileDialog = false
+          if (compName.isBlank()) {
+            viewModel.showMessage("اسم المؤسسة مطلوب")
+          } else {
+            viewModel.saveSettings(
+              mapOf(
+                "company_name" to compName.trim(),
+                "company_address" to compAddress.trim(),
+                "company_phone" to compPhone.trim(),
+                "company_tax_number" to compTax.trim()
+              )
+            ) { showCompanyProfileDialog = false }
+          }
         }) {
           Text("حفظ", fontWeight = FontWeight.Bold)
         }
@@ -165,8 +178,12 @@ fun SettingsScreen(
 
   // Dialog: Printer Configuration (video 03:21)
   if (showPrinterDialog) {
-    var thermalEnabled by remember { mutableStateOf(true) }
-    var autoCut by remember { mutableStateOf(true) }
+    var thermalEnabled by remember(showPrinterDialog, settingsMap) {
+      mutableStateOf(settingsMap["printer_thermal_enabled"]?.toBooleanStrictOrNull() ?: false)
+    }
+    var autoCut by remember(showPrinterDialog, settingsMap) {
+      mutableStateOf(settingsMap["printer_auto_cut"]?.toBooleanStrictOrNull() ?: false)
+    }
 
     AlertDialog(
       onDismissRequest = { showPrinterDialog = false },
@@ -194,8 +211,12 @@ fun SettingsScreen(
       },
       confirmButton = {
         TextButton(onClick = {
-          viewModel.showMessage("تم حفظ إعدادات الطابعة")
-          showPrinterDialog = false
+          viewModel.saveSettings(
+            mapOf(
+              "printer_thermal_enabled" to thermalEnabled.toString(),
+              "printer_auto_cut" to autoCut.toString()
+            )
+          ) { showPrinterDialog = false }
         }) {
           Text("موافق", fontWeight = FontWeight.Bold)
         }

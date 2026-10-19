@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Update
 import com.example.data.model.AccountEntity
+import com.example.data.model.AppSettingEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
@@ -59,18 +60,54 @@ interface AccountingDao {
   @Query("SELECT * FROM items WHERE id = :id")
   suspend fun getItemById(id: Long): ItemEntity?
 
+  @Query("SELECT COUNT(*) FROM invoice_items WHERE itemId = :itemId")
+  suspend fun countInvoiceLinesForItem(itemId: Long): Int
+
   @Query("UPDATE items SET currentStock = currentStock + :qtyChange WHERE id = :id")
   suspend fun adjustItemStock(id: Long, qtyChange: Double)
 
   @Query("SELECT * FROM accounts WHERE name = :name LIMIT 1")
   suspend fun getAccountByName(name: String): AccountEntity?
 
+  @Query("SELECT * FROM accounts WHERE id = :id LIMIT 1")
+  suspend fun getAccountById(id: Long): AccountEntity?
+
+  @Query("UPDATE invoices SET partyName = :newName WHERE partyName = :oldName")
+  suspend fun renameInvoiceParty(oldName: String, newName: String)
+
+  @Query("UPDATE vouchers SET accountName = :newName WHERE accountName = :oldName")
+  suspend fun renameVoucherAccount(oldName: String, newName: String)
+
   @Query("UPDATE accounts SET balance = balance + :balanceChange WHERE name = :name")
   suspend fun adjustAccountBalance(name: String, balanceChange: Double)
+
+  @Query("SELECT COUNT(*) FROM invoices WHERE partyName = :name")
+  suspend fun countInvoicesForParty(name: String): Int
+
+  @Query("SELECT COUNT(*) FROM vouchers WHERE accountName = :name")
+  suspend fun countVouchersForAccount(name: String): Int
 
   // Warehouses
   @Query("SELECT * FROM warehouses ORDER BY id ASC")
   fun getAllWarehouses(): Flow<List<WarehouseEntity>>
+
+  @Query("SELECT * FROM warehouses WHERE id = :id LIMIT 1")
+  suspend fun getWarehouseById(id: Long): WarehouseEntity?
+
+  @Query("SELECT * FROM warehouses WHERE name = :name LIMIT 1")
+  suspend fun getWarehouseByName(name: String): WarehouseEntity?
+
+  @Query("UPDATE invoices SET warehouseName = :newName WHERE warehouseName = :oldName")
+  suspend fun renameInvoiceWarehouse(oldName: String, newName: String)
+
+  @Query("UPDATE warehouse_operations SET warehouseName = :newName WHERE warehouseName = :oldName")
+  suspend fun renameOperationWarehouse(oldName: String, newName: String)
+
+  @Query("UPDATE warehouse_operations SET targetWarehouseName = :newName WHERE targetWarehouseName = :oldName")
+  suspend fun renameOperationTargetWarehouse(oldName: String, newName: String)
+
+  @Query("UPDATE app_settings SET settingValue = :newName WHERE settingKey = 'active_warehouse' AND settingValue = :oldName")
+  suspend fun renameActiveWarehouseSetting(oldName: String, newName: String)
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertWarehouse(warehouse: WarehouseEntity): Long
@@ -83,6 +120,12 @@ interface AccountingDao {
 
   @Delete
   suspend fun deleteWarehouse(warehouse: WarehouseEntity)
+
+  @Query("SELECT COUNT(*) FROM invoices WHERE warehouseName = :name")
+  suspend fun countInvoicesForWarehouse(name: String): Int
+
+  @Query("SELECT COUNT(*) FROM warehouse_operations WHERE warehouseName = :name OR targetWarehouseName = :name")
+  suspend fun countOperationsForWarehouse(name: String): Int
 
   // Invoices
   @Query("SELECT * FROM invoices ORDER BY id DESC")
@@ -125,6 +168,9 @@ interface AccountingDao {
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertVouchers(vouchers: List<VoucherEntity>)
 
+  @Query("SELECT * FROM vouchers WHERE id = :id LIMIT 1")
+  suspend fun getVoucherById(id: Long): VoucherEntity?
+
   @Update
   suspend fun updateVoucher(voucher: VoucherEntity)
 
@@ -134,6 +180,21 @@ interface AccountingDao {
   // Currencies
   @Query("SELECT * FROM currencies ORDER BY id ASC")
   fun getAllCurrencies(): Flow<List<CurrencyEntity>>
+
+  @Query("SELECT * FROM currencies WHERE id = :id LIMIT 1")
+  suspend fun getCurrencyById(id: Long): CurrencyEntity?
+
+  @Query("SELECT * FROM currencies WHERE name = :name LIMIT 1")
+  suspend fun getCurrencyByName(name: String): CurrencyEntity?
+
+  @Query("UPDATE invoices SET currency = :newName WHERE currency = :oldName")
+  suspend fun renameInvoiceCurrency(oldName: String, newName: String)
+
+  @Query("UPDATE vouchers SET currency = :newName WHERE currency = :oldName")
+  suspend fun renameVoucherCurrency(oldName: String, newName: String)
+
+  @Query("UPDATE app_settings SET settingValue = :newName WHERE settingKey = 'active_currency' AND settingValue = :oldName")
+  suspend fun renameActiveCurrencySetting(oldName: String, newName: String)
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertCurrency(currency: CurrencyEntity): Long
@@ -146,6 +207,22 @@ interface AccountingDao {
 
   @Delete
   suspend fun deleteCurrency(currency: CurrencyEntity)
+
+  @Query("SELECT COUNT(*) FROM invoices WHERE currency = :name")
+  suspend fun countInvoicesForCurrency(name: String): Int
+
+  @Query("SELECT COUNT(*) FROM vouchers WHERE currency = :name")
+  suspend fun countVouchersForCurrency(name: String): Int
+
+  // App settings
+  @Query("SELECT * FROM app_settings ORDER BY settingKey ASC")
+  fun getAllSettings(): Flow<List<AppSettingEntity>>
+
+  @Query("SELECT * FROM app_settings WHERE settingKey = :key LIMIT 1")
+  suspend fun getSetting(key: String): AppSettingEntity?
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun upsertSettings(settings: List<AppSettingEntity>)
 
   // Warehouse Operations
   @Query("SELECT * FROM warehouse_operations ORDER BY id DESC")

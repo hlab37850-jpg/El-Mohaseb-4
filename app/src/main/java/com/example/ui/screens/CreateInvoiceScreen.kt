@@ -52,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -85,11 +86,30 @@ fun CreateInvoiceScreen(
   val availableCurrencies by viewModel.allCurrencies.collectAsState()
   val availableAccounts by viewModel.allAccounts.collectAsState()
   val availableItems by viewModel.allItems.collectAsState()
+  val activeWarehouse by viewModel.activeWarehouse.collectAsState()
+  val activeCurrency by viewModel.activeCurrency.collectAsState()
 
   var isCredit by remember { mutableStateOf(true) } // آجل vs نقد
   var isReturn by remember { mutableStateOf(false) } // مرتجع
-  var warehouseName by remember { mutableStateOf(availableWarehouses.firstOrNull()?.name ?: "المخزن الرئيسي") }
-  var currency by remember { mutableStateOf(availableCurrencies.firstOrNull()?.name ?: "محلي") }
+  var warehouseName by remember { mutableStateOf(activeWarehouse) }
+  var currency by remember { mutableStateOf(activeCurrency) }
+
+  LaunchedEffect(availableWarehouses, activeWarehouse) {
+    warehouseName = when {
+      availableWarehouses.any { it.name == activeWarehouse } -> activeWarehouse
+      availableWarehouses.isNotEmpty() && availableWarehouses.none { it.name == warehouseName } ->
+        availableWarehouses.first().name
+      else -> warehouseName
+    }
+  }
+  LaunchedEffect(availableCurrencies, activeCurrency) {
+    currency = when {
+      availableCurrencies.any { it.name == activeCurrency } -> activeCurrency
+      availableCurrencies.isNotEmpty() && availableCurrencies.none { it.name == currency } ->
+        availableCurrencies.first().name
+      else -> currency
+    }
+  }
   var partyName by remember { mutableStateOf("") }
   var invoiceDate by remember { mutableStateOf(viewModel.todayFormatted) }
   var invoiceNumber by remember { mutableStateOf((System.currentTimeMillis() % 10000).toString()) }
@@ -273,6 +293,7 @@ fun CreateInvoiceScreen(
                   text = { Text(wh.name) },
                   onClick = {
                     warehouseName = wh.name
+                    viewModel.setActiveWarehouse(wh.name)
                     showWarehousePicker = false
                   }
                 )
@@ -302,6 +323,7 @@ fun CreateInvoiceScreen(
                   text = { Text("${curr.name} (${curr.symbol})") },
                   onClick = {
                     currency = curr.name
+                    viewModel.setActiveCurrency(curr.name)
                     showCurrencyPicker = false
                   }
                 )
@@ -517,6 +539,8 @@ fun CreateInvoiceScreen(
   // Dialog: Add Item Line (Matching video 00:20 - 00:27)
   if (showAddItemDialog) {
     var selectedItem by remember { mutableStateOf<ItemEntity?>(availableItems.firstOrNull()) }
+    var itemSearchText by remember { mutableStateOf(availableItems.firstOrNull()?.name.orEmpty()) }
+    var showItemSuggestions by remember { mutableStateOf(false) }
     var quantityText by remember { mutableStateOf("1.0") }
     var priceText by remember {
       mutableStateOf(
@@ -542,33 +566,72 @@ fun CreateInvoiceScreen(
       },
       text = {
         Column {
-          Text("اختر الصنف من قاعدة البيانات:", fontSize = 12.sp, color = Color.Gray)
+          Text("ابحث عن الصنف بالاسم أو الرمز:", fontSize = 12.sp, color = Color.Gray)
           Spacer(modifier = Modifier.height(4.dp))
 
-          LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-          ) {
-            items(availableItems) { itm ->
-              val isSel = itm.id == selectedItem?.id
-              Box(
-                modifier = Modifier
-                  .clip(RoundedCornerShape(8.dp))
-                  .background(if (isSel) MohasebPrimaryBlue else Color(0xFFE2E8F0))
-                  .clickable {
-                    selectedItem = itm
-                    priceText = if (invoiceType == "SALE") itm.sellingPrice.toString() else itm.costPrice.toString()
-                  }
-                  .padding(horizontal = 10.dp, vertical = 6.dp)
-              ) {
-                Text(
-                  text = itm.name,
-                  color = if (isSel) Color.White else Color.Black,
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.Medium
+          Box(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+              value = itemSearchText,
+              onValueChange = {
+                itemSearchText = it
+                selectedItem = null
+                showItemSuggestions = true
+              },
+              label = { Text("الصنف") },
+              placeholder = { Text("اكتب اسم الصنف أو رمزه...") },
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("input_invoice_item_search"),
+              singleLine = true,
+              trailingIcon = {
+                IconButton(onClick = { showItemSuggestions = !showItemSuggestions }) {
+                  Icon(Icons.Default.MoreVert, contentDescription = "عرض الأصناف")
+                }
+              }
+            )
+            DropdownMenu(
+              expanded = showItemSuggestions,
+              onDismissRequest = { showItemSuggestions = false },
+              modifier = Modifier.fillMaxWidth(0.95f)
+            ) {
+              val matchingItems = availableItems.filter {
+                itemSearchText.isBlank() ||
+                  it.name.contains(itemSearchText.trim(), ignoreCase = true) ||
+                  it.code.contains(itemSearchText.trim(), ignoreCase = true)
+              }.take(50)
+              if (matchingItems.isEmpty()) {
+                DropdownMenuItem(
+                  text = { Text("لا توجد أصناف مطابقة") },
+                  onClick = { showItemSuggestions = false },
+                  enabled = false
                 )
+              } else {
+                matchingItems.forEach { itm ->
+                  DropdownMenuItem(
+                    text = {
+                      Column {
+                        Text(itm.name, fontWeight = FontWeight.Medium)
+                        Text(
+                          "الرمز: ${itm.code} • المتوفر: ${"%.2f".format(itm.currentStock)}",
+                          fontSize = 11.sp,
+                          color = Color.Gray
+                        )
+                      }
+                    },
+                    onClick = {
+                      selectedItem = itm
+                      itemSearchText = itm.name
+                      priceText = if (invoiceType == "SALE") itm.sellingPrice.toString() else itm.costPrice.toString()
+                      showItemSuggestions = false
+                    }
+                  )
+                }
               }
             }
+          }
+
+          if (availableItems.isEmpty()) {
+            Text("لا توجد أصناف في قاعدة البيانات؛ أضف صنفًا أولًا.", color = Color.Red, fontSize = 12.sp)
           }
 
           Spacer(modifier = Modifier.height(10.dp))
@@ -611,8 +674,8 @@ fun CreateInvoiceScreen(
       confirmButton = {
         Button(
           onClick = {
-            val itemToAdd = selectedItem ?: availableItems.firstOrNull()
-            if (itemToAdd != null && qVal > 0 && pVal > 0) {
+            val itemToAdd = selectedItem
+            if (itemToAdd != null && qVal > 0 && pVal >= 0 && qVal.isFinite() && pVal.isFinite()) {
               lineItems.add(
                 InvoiceItemEntity(
                   invoiceId = 0,
@@ -625,7 +688,7 @@ fun CreateInvoiceScreen(
               )
               showAddItemDialog = false
             } else {
-              viewModel.showMessage("يرجى إدخال كمية وسعر صالحين")
+              viewModel.showMessage(if (itemToAdd == null) "اختر صنفًا من نتائج البحث أولًا" else "يرجى إدخال كمية وسعر صالحين")
             }
           },
           colors = ButtonDefaults.buttonColors(containerColor = MohasebPrimaryBlue),

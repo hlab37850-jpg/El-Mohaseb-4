@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.example.data.model.AccountEntity
+import com.example.data.model.AppSettingEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
@@ -17,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -30,7 +32,12 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
   val activeWarehouse: StateFlow<String> = _activeWarehouse.asStateFlow()
 
   fun setActiveWarehouse(name: String) {
-    _activeWarehouse.value = name
+    if (name.isBlank()) return
+    viewModelScope.launch {
+      runCatching { repository.saveSettings(mapOf("active_warehouse" to name)) }
+        .onSuccess { _activeWarehouse.value = name }
+        .onFailure { showMessage(it.message ?: "تعذر حفظ المخزن النشط") }
+    }
   }
 
   // Active Currency
@@ -38,7 +45,23 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
   val activeCurrency: StateFlow<String> = _activeCurrency.asStateFlow()
 
   fun setActiveCurrency(curr: String) {
-    _activeCurrency.value = curr
+    if (curr.isBlank()) return
+    viewModelScope.launch {
+      runCatching { repository.saveSettings(mapOf("active_currency" to curr)) }
+        .onSuccess { _activeCurrency.value = curr }
+        .onFailure { showMessage(it.message ?: "تعذر حفظ العملة النشطة") }
+    }
+  }
+
+  init {
+    viewModelScope.launch {
+      repository.allSettings.collect { settings ->
+        settings.firstOrNull { it.settingKey == "active_warehouse" }
+          ?.settingValue?.takeIf { it.isNotBlank() }?.let { _activeWarehouse.value = it }
+        settings.firstOrNull { it.settingKey == "active_currency" }
+          ?.settingValue?.takeIf { it.isNotBlank() }?.let { _activeCurrency.value = it }
+      }
+    }
   }
 
   // Data streams from Room
@@ -78,11 +101,34 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     initialValue = emptyList()
   )
 
+  val allSettings: StateFlow<List<AppSettingEntity>> = repository.allSettings.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
   val allOperations: StateFlow<List<WarehouseOperationEntity>> = repository.allOperations.stateIn(
     scope = viewModelScope,
     started = SharingStarted.WhileSubscribed(5000),
     initialValue = emptyList()
   )
+
+  fun saveSettings(settings: Map<String, String>, onSuccess: () -> Unit = {}) {
+    if (settings.keys.any { it.isBlank() }) {
+      showMessage("تعذر حفظ إعداد غير صالح")
+      return
+    }
+    viewModelScope.launch {
+      runCatching { repository.saveSettings(settings) }
+        .onSuccess {
+          showMessage("تم حفظ الإعدادات")
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر حفظ الإعدادات")
+        }
+    }
+  }
 
   // Message / Notification Toast banner
   private val _userMessage = MutableStateFlow<String?>(null)
@@ -94,6 +140,23 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
 
   fun clearMessage() {
     _userMessage.value = null
+  }
+
+  private fun performDbAction(
+    successMessage: String,
+    onSuccess: () -> Unit = {},
+    action: suspend () -> Unit
+  ) {
+    viewModelScope.launch {
+      runCatching { action() }
+        .onSuccess {
+          showMessage(successMessage)
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر تنفيذ العملية في قاعدة البيانات")
+        }
+    }
   }
 
   // Current Date string helper
@@ -123,9 +186,30 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     notes: String,
     onSuccess: () -> Unit
   ) {
+    if (type != "SALE" && type != "PURCHASE") {
+      showMessage("نوع الفاتورة غير صحيح")
+      return
+    }
+    if (items.isEmpty()) {
+      showMessage("أضف صنفًا واحدًا على الأقل قبل حفظ الفاتورة")
+      return
+    }
+    if (items.any { it.itemId <= 0L || !it.quantity.isFinite() || it.quantity <= 0.0 ||
+        !it.unitPrice.isFinite() || it.unitPrice < 0.0 || !it.total.isFinite() || it.total < 0.0 }) {
+      showMessage("تحقق من الأصناف والكميات والأسعار في الفاتورة")
+      return
+    }
+    if (listOf(discount, tax, otherFees, paidAmount).any { !it.isFinite() || it < 0.0 }) {
+      showMessage("لا يمكن إدخال مبالغ سالبة أو غير صالحة")
+      return
+    }
     val subtotal = items.sumOf { it.total }
-    val netTotal = (subtotal - discount + tax + otherFees).coerceAtLeast(0.0)
-    val remaining = (netTotal - paidAmount).coerceAtLeast(0.0)
+    val netTotal = subtotal - discount + tax + otherFees
+    if (!netTotal.isFinite() || netTotal < 0.0 || paidAmount > netTotal) {
+      showMessage("راجع الخصم والضريبة والرسوم والمبلغ المدفوع")
+      return
+    }
+    val remaining = netTotal - paidAmount
 
     val invoice = InvoiceEntity(
       invoiceNumber = invoiceNumber.ifBlank { System.currentTimeMillis().toString().takeLast(4) },
@@ -146,20 +230,22 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     )
 
     viewModelScope.launch {
-      repository.createInvoice(invoice, items)
-      val typeLabel = if (type == "SALE") "فاتورة بيع" else "فاتورة شراء"
-      showMessage("تم حفظ $typeLabel بنجاح وتحديث أرصدة المخزون")
-      onSuccess()
+      runCatching { repository.createInvoice(invoice, items) }
+        .onSuccess {
+          val typeLabel = if (type == "SALE") "فاتورة بيع" else "فاتورة شراء"
+          showMessage("تم حفظ $typeLabel بنجاح وتحديث أرصدة المخزون")
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر حفظ الفاتورة؛ لم يتم تأكيد نجاح العملية")
+        }
     }
   }
 
-  fun deleteInvoice(invoice: InvoiceEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteInvoice(invoice: InvoiceEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف الفاتورة رقم ${invoice.invoiceNumber} وإرجاع الكميات للمخزن", onSuccess) {
       repository.deleteInvoice(invoice)
-      showMessage("تم حذف الفاتورة رقم ${invoice.invoiceNumber} وإرجاع الكميات للمخزن")
-      onSuccess()
     }
-  }
 
   // Voucher Creation & Deletion
   fun saveVoucher(
@@ -171,6 +257,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     notes: String,
     onSuccess: () -> Unit
   ) {
+    if (!amount.isFinite() || amount <= 0.0) {
+      showMessage("يجب أن تكون قيمة السند أكبر من صفر")
+      return
+    }
     val voucher = VoucherEntity(
       voucherNumber = (System.currentTimeMillis() % 10000).toString(),
       type = type,
@@ -182,28 +272,35 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
       notes = notes
     )
     viewModelScope.launch {
-      repository.insertVoucher(voucher)
-      val typeAr = if (type == "RECEIPT") "سند قبض" else "سند صرف"
-      showMessage("تم حفظ $typeAr بمبلغ $amount بنجاح وتحديث الرصيد")
-      onSuccess()
+      runCatching { repository.insertVoucher(voucher) }
+        .onSuccess {
+          val typeAr = if (type == "RECEIPT") "سند قبض" else "سند صرف"
+          showMessage("تم حفظ $typeAr بمبلغ $amount بنجاح وتحديث الرصيد")
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر حفظ السند")
+        }
     }
   }
 
   fun updateVoucher(voucher: VoucherEntity, onSuccess: () -> Unit = {}) {
     viewModelScope.launch {
-      repository.updateVoucher(voucher)
-      showMessage("تم تحديث بيانات السند رقم ${voucher.voucherNumber}")
-      onSuccess()
+      runCatching { repository.updateVoucher(voucher) }
+        .onSuccess {
+          showMessage("تم تحديث بيانات السند رقم ${voucher.voucherNumber}")
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر تحديث السند")
+        }
     }
   }
 
-  fun deleteVoucher(voucher: VoucherEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteVoucher(voucher: VoucherEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف السند رقم ${voucher.voucherNumber} بنجاح", onSuccess) {
       repository.deleteVoucher(voucher)
-      showMessage("تم حذف السند رقم ${voucher.voucherNumber} بنجاح")
-      onSuccess()
     }
-  }
 
   // Accounts CRUD
   fun addAccount(
@@ -216,7 +313,11 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     notifySMS: Boolean,
     onSuccess: () -> Unit
   ) {
-    viewModelScope.launch {
+    if (name.isBlank() || category.isBlank()) {
+      showMessage("اسم الحساب والتصنيف مطلوبان")
+      return
+    }
+    performDbAction("تم إضافة الحساب: $name بنجاح", onSuccess) {
       repository.insertAccount(
         AccountEntity(
           name = name,
@@ -228,26 +329,19 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
           notifySMS = notifySMS
         )
       )
-      showMessage("تم إضافة الحساب: $name بنجاح")
-      onSuccess()
+      Unit
     }
   }
 
-  fun updateAccount(account: AccountEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateAccount(account: AccountEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث بيانات الحساب: ${account.name}", onSuccess) {
       repository.updateAccount(account)
-      showMessage("تم تحديث بيانات الحساب: ${account.name}")
-      onSuccess()
     }
-  }
 
-  fun deleteAccount(account: AccountEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteAccount(account: AccountEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف الحساب: ${account.name}", onSuccess) {
       repository.deleteAccount(account)
-      showMessage("تم حذف الحساب: ${account.name}")
-      onSuccess()
     }
-  }
 
   // Items CRUD
   fun addItem(
@@ -260,7 +354,17 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     openingQty: Double,
     onSuccess: () -> Unit
   ) {
-    viewModelScope.launch {
+    if (name.isBlank() || category.isBlank() || unit.isBlank()) {
+      showMessage("اسم الصنف والتصنيف والوحدة حقول مطلوبة")
+      return
+    }
+    if (!costPrice.isFinite() || costPrice < 0.0 ||
+        !sellingPrice.isFinite() || sellingPrice < 0.0 ||
+        !openingQty.isFinite() || openingQty < 0.0) {
+      showMessage("تحقق من أسعار الصنف والكمية الافتتاحية")
+      return
+    }
+    performDbAction("تم إضافة الصنف: $name بنجاح", onSuccess) {
       repository.insertItem(
         ItemEntity(
           code = code.ifBlank { "ITM-" + (System.currentTimeMillis() % 1000) },
@@ -273,78 +377,55 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
           currentStock = openingQty
         )
       )
-      showMessage("تم إضافة الصنف: $name بنجاح")
-      onSuccess()
+      Unit
     }
   }
 
-  fun updateItem(item: ItemEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateItem(item: ItemEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث بيانات الصنف: ${item.name}", onSuccess) {
       repository.updateItem(item)
-      showMessage("تم تحديث بيانات الصنف: ${item.name}")
-      onSuccess()
     }
-  }
 
-  fun deleteItem(item: ItemEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteItem(item: ItemEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف الصنف: ${item.name}", onSuccess) {
       repository.deleteItem(item)
-      showMessage("تم حذف الصنف: ${item.name}")
-      onSuccess()
     }
-  }
 
   // Warehouses CRUD
-  fun addWarehouse(name: String, phone: String, address: String, onSuccess: () -> Unit) {
-    viewModelScope.launch {
+  fun addWarehouse(name: String, phone: String, address: String, onSuccess: () -> Unit) =
+    performDbAction("تم إضافة المخزن: $name بنجاح", onSuccess) {
       repository.insertWarehouse(WarehouseEntity(name = name, phone = phone, address = address))
-      showMessage("تم إضافة المخزن: $name بنجاح")
-      onSuccess()
+      Unit
     }
-  }
 
-  fun updateWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث بيانات المخزن: ${warehouse.name}", onSuccess) {
       repository.updateWarehouse(warehouse)
-      showMessage("تم تحديث بيانات المخزن: ${warehouse.name}")
-      onSuccess()
     }
-  }
 
-  fun deleteWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف المخزن: ${warehouse.name}", onSuccess) {
       repository.deleteWarehouse(warehouse)
-      showMessage("تم حذف المخزن: ${warehouse.name}")
-      onSuccess()
     }
-  }
 
   // Currencies CRUD
-  fun addCurrency(name: String, symbol: String, subUnit: String, rate: Double, onSuccess: () -> Unit) {
-    viewModelScope.launch {
+  fun addCurrency(name: String, symbol: String, subUnit: String, rate: Double, onSuccess: () -> Unit) =
+    performDbAction("تم إضافة العملة: $name بنجاح", onSuccess) {
       repository.insertCurrency(
         CurrencyEntity(name = name, symbol = symbol, subUnit = subUnit, exchangeRate = rate)
       )
-      showMessage("تم إضافة العملة: $name بنجاح")
-      onSuccess()
+      Unit
     }
-  }
 
-  fun updateCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث سعر صرف عملة: ${currency.name}", onSuccess) {
       repository.updateCurrency(currency)
-      showMessage("تم تحديث سعر صرف عملة: ${currency.name}")
-      onSuccess()
     }
-  }
 
-  fun deleteCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف عملة: ${currency.name}", onSuccess) {
       repository.deleteCurrency(currency)
-      showMessage("تم حذف عملة: ${currency.name}")
-      onSuccess()
     }
-  }
 
   // Warehouse Operations CRUD
   fun addWarehouseOperation(
@@ -356,41 +437,32 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     totalItems: Int,
     totalCost: Double,
     onSuccess: () -> Unit
-  ) {
-    viewModelScope.launch {
-      repository.insertOperation(
-        WarehouseOperationEntity(
-          operationNumber = (System.currentTimeMillis() % 1000).toString(),
-          operationType = opType,
-          warehouseName = warehouse,
-          targetWarehouseName = toWarehouse,
-          date = todayFormatted,
-          partyOrAccount = party,
-          totalItems = totalItems,
-          totalCost = totalCost,
-          notes = notes
-        )
+  ) = performDbAction("تم تسجيل عملية $opType بنجاح", onSuccess) {
+    repository.insertOperation(
+      WarehouseOperationEntity(
+        operationNumber = (System.currentTimeMillis() % 1000).toString(),
+        operationType = opType,
+        warehouseName = warehouse,
+        targetWarehouseName = toWarehouse,
+        date = todayFormatted,
+        partyOrAccount = party,
+        totalItems = totalItems,
+        totalCost = totalCost,
+        notes = notes
       )
-      showMessage("تم تسجيل عملية $opType بنجاح")
-      onSuccess()
-    }
+    )
+    Unit
   }
 
-  fun updateWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث العملية المخزنية #${op.operationNumber}", onSuccess) {
       repository.updateOperation(op)
-      showMessage("تم تحديث العملية المخزنية #${op.operationNumber}")
-      onSuccess()
     }
-  }
 
-  fun deleteWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun deleteWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف العملية المخزنية #${op.operationNumber}", onSuccess) {
       repository.deleteOperation(op)
-      showMessage("تم حذف العملية المخزنية #${op.operationNumber}")
-      onSuccess()
     }
-  }
 }
 
 class AccountingViewModelFactory(private val repository: AccountingRepository) : ViewModelProvider.Factory {

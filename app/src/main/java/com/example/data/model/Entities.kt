@@ -106,3 +106,10 @@ data class WarehouseOperationEntity(
   val totalCost: Double = 0.0,
   val notes: String = ""
 )
+
+
+@Entity(tableName = "app_settings")
+data class AppSettingEntity(
+  @PrimaryKey val settingKey: String,
+  val settingValue: String
+)
