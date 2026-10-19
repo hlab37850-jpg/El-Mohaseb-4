@@ -198,6 +198,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     notes: String,
     onSuccess: () -> Unit
   ) {
+    if (!amount.isFinite() || amount <= 0.0) {
+      showMessage("يجب أن تكون قيمة السند أكبر من صفر")
+      return
+    }
     val voucher = VoucherEntity(
       voucherNumber = (System.currentTimeMillis() % 10000).toString(),
       type = type,
@@ -209,10 +213,15 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
       notes = notes
     )
     viewModelScope.launch {
-      repository.insertVoucher(voucher)
-      val typeAr = if (type == "RECEIPT") "سند قبض" else "سند صرف"
-      showMessage("تم حفظ $typeAr بمبلغ $amount بنجاح وتحديث الرصيد")
-      onSuccess()
+      runCatching { repository.insertVoucher(voucher) }
+        .onSuccess {
+          val typeAr = if (type == "RECEIPT") "سند قبض" else "سند صرف"
+          showMessage("تم حفظ $typeAr بمبلغ $amount بنجاح وتحديث الرصيد")
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر حفظ السند")
+        }
     }
   }
 
