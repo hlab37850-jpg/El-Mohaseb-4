@@ -13,6 +13,7 @@ import com.example.data.model.VoucherEntity
 import com.example.data.model.WarehouseEntity
 import com.example.data.model.WarehouseOperationEntity
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 
 class AccountingRepository(
   private val dao: AccountingDao,
@@ -99,6 +100,7 @@ class AccountingRepository(
     if (database != null) database.withTransaction { update() } else update()
   }
   suspend fun deleteWarehouse(warehouse: WarehouseEntity) {
+    require(dao.getAllWarehouses().first().size > 1) { "يجب الاحتفاظ بمخزن واحد على الأقل" }
     require(dao.countInvoicesForWarehouse(warehouse.name) == 0 && dao.countOperationsForWarehouse(warehouse.name) == 0) {
       "لا يمكن حذف المخزن لأنه مرتبط بفواتير أو عمليات مخزنية"
     }
@@ -306,6 +308,7 @@ class AccountingRepository(
     require(currency.exchangeRate.isFinite() && currency.exchangeRate > 0.0) { "سعر الصرف يجب أن يكون رقمًا أكبر من صفر" }
   }
   suspend fun deleteCurrency(currency: CurrencyEntity) {
+    require(dao.getAllCurrencies().first().size > 1) { "يجب الاحتفاظ بعملة واحدة على الأقل" }
     require(dao.countInvoicesForCurrency(currency.name) == 0 && dao.countVouchersForCurrency(currency.name) == 0) {
       "لا يمكن حذف العملة لأنها مستخدمة في فواتير أو سندات محفوظة"
     }
