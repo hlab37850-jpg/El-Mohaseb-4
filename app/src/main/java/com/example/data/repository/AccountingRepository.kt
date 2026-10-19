@@ -117,7 +117,23 @@ class AccountingRepository(private val dao: AccountingDao) {
     return id
   }
 
-  suspend fun updateVoucher(voucher: VoucherEntity) = dao.updateVoucher(voucher)
+  suspend fun updateVoucher(voucher: VoucherEntity) {
+    require(voucher.amount > 0.0 && voucher.amount.isFinite()) {
+      "قيمة السند يجب أن تكون أكبر من صفر"
+    }
+    val previous = dao.getVoucherById(voucher.id)
+      ?: throw IllegalArgumentException("السند المراد تعديله غير موجود")
+
+    // Reverse the old balance effect before applying the edited voucher effect.
+    // This also handles changing the linked account or amount.
+    if (previous.accountName.isNotBlank()) {
+      dao.adjustAccountBalance(previous.accountName, previous.amount)
+    }
+    dao.updateVoucher(voucher)
+    if (voucher.accountName.isNotBlank()) {
+      dao.adjustAccountBalance(voucher.accountName, -voucher.amount)
+    }
+  }
 
   suspend fun deleteVoucher(voucher: VoucherEntity) {
     // Reverse account balance adjustment
