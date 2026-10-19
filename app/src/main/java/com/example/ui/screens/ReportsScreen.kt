@@ -65,13 +65,21 @@ fun ReportsScreen(
   val initialIndex = reportTabs.indexOfFirst { it.contains(initialReport) }.coerceAtLeast(0)
   var selectedTab by remember { mutableIntStateOf(initialIndex) }
 
-  // Financial Stats
-  val totalSales = invoices.filter { it.type == "SALE" }.sumOf { it.subtotal - it.discount + it.tax + it.otherFees }
-  val totalPurchases = invoices.filter { it.type == "PURCHASE" }.sumOf { it.subtotal - it.discount + it.tax + it.otherFees }
+  // Figures are derived from saved records. Returns reduce their corresponding totals.
+  val totalSales = invoices.filter { it.type == "SALE" }.sumOf {
+    val amount = it.subtotal - it.discount + it.tax + it.otherFees
+    if (it.isReturn) -amount else amount
+  }
+  val totalPurchases = invoices.filter { it.type == "PURCHASE" }.sumOf {
+    val amount = it.subtotal - it.discount + it.tax + it.otherFees
+    if (it.isReturn) -amount else amount
+  }
   val totalReceipts = vouchers.filter { it.type == "RECEIPT" }.sumOf { it.amount }
   val totalPayments = vouchers.filter { it.type == "PAYMENT" }.sumOf { it.amount }
-  val grossProfit = (totalSales - (totalPurchases * 0.7)).coerceAtLeast(0.0)
-  val netProfit = (grossProfit - totalPayments).coerceAtLeast(0.0)
+  // The schema does not yet track cost of goods sold or classify every payment as an expense.
+  // Avoid inventing a profit percentage: display the difference between recorded sales and purchases.
+  val grossProfit = totalSales - totalPurchases
+  val netProfit = grossProfit - totalPayments
 
   Scaffold(
     topBar = {
@@ -230,9 +238,9 @@ fun IncomeStatementReport(
   ) {
     ReportMetricCard("إجمالي المبيعات الإيرادية", totalSales, Color(0xFF1565C0))
     ReportMetricCard("تكلفة المشتريات والبضاعة", totalPurchases, Color(0xFFC62828))
-    ReportMetricCard("مجمل الربح التجاري", grossProfit, Color(0xFF00796B))
+    ReportMetricCard("فرق المبيعات والمشتريات", grossProfit, Color(0xFF00796B))
     ReportMetricCard("المصروفات والسندات الصادرة", totalExpenses, Color(0xFFD84315))
-    ReportMetricCard("صافي الأرباح الصافية", netProfit, Color(0xFF2E7D32), isHighlight = true)
+    ReportMetricCard("الفرق بعد سندات الصرف", netProfit, Color(0xFF2E7D32), isHighlight = true)
   }
 }
 
