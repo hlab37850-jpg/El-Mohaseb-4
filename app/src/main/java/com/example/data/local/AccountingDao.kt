@@ -125,6 +125,9 @@ interface AccountingDao {
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertVouchers(vouchers: List<VoucherEntity>)
 
+  @Query("SELECT * FROM vouchers WHERE id = :id LIMIT 1")
+  suspend fun getVoucherById(id: Long): VoucherEntity?
+
   @Update
   suspend fun updateVoucher(voucher: VoucherEntity)
 
