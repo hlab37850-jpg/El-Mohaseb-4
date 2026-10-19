@@ -91,6 +91,21 @@ interface AccountingDao {
   @Query("SELECT * FROM warehouses ORDER BY id ASC")
   fun getAllWarehouses(): Flow<List<WarehouseEntity>>
 
+  @Query("SELECT * FROM warehouses WHERE id = :id LIMIT 1")
+  suspend fun getWarehouseById(id: Long): WarehouseEntity?
+
+  @Query("UPDATE invoices SET warehouseName = :newName WHERE warehouseName = :oldName")
+  suspend fun renameInvoiceWarehouse(oldName: String, newName: String)
+
+  @Query("UPDATE warehouse_operations SET warehouseName = :newName WHERE warehouseName = :oldName")
+  suspend fun renameOperationWarehouse(oldName: String, newName: String)
+
+  @Query("UPDATE warehouse_operations SET targetWarehouseName = :newName WHERE targetWarehouseName = :oldName")
+  suspend fun renameOperationTargetWarehouse(oldName: String, newName: String)
+
+  @Query("UPDATE app_settings SET settingValue = :newName WHERE settingKey = 'active_warehouse' AND settingValue = :oldName")
+  suspend fun renameActiveWarehouseSetting(oldName: String, newName: String)
+
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertWarehouse(warehouse: WarehouseEntity): Long
 
@@ -162,6 +177,18 @@ interface AccountingDao {
   // Currencies
   @Query("SELECT * FROM currencies ORDER BY id ASC")
   fun getAllCurrencies(): Flow<List<CurrencyEntity>>
+
+  @Query("SELECT * FROM currencies WHERE id = :id LIMIT 1")
+  suspend fun getCurrencyById(id: Long): CurrencyEntity?
+
+  @Query("UPDATE invoices SET currency = :newName WHERE currency = :oldName")
+  suspend fun renameInvoiceCurrency(oldName: String, newName: String)
+
+  @Query("UPDATE vouchers SET currency = :newName WHERE currency = :oldName")
+  suspend fun renameVoucherCurrency(oldName: String, newName: String)
+
+  @Query("UPDATE app_settings SET settingValue = :newName WHERE settingKey = 'active_currency' AND settingValue = :oldName")
+  suspend fun renameActiveCurrencySetting(oldName: String, newName: String)
 
   @Insert(onConflict = OnConflictStrategy.REPLACE)
   suspend fun insertCurrency(currency: CurrencyEntity): Long
