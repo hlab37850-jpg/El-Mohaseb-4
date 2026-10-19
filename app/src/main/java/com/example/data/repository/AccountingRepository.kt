@@ -147,6 +147,12 @@ class AccountingRepository(
 
   private suspend fun validateInvoice(invoice: InvoiceEntity, items: List<InvoiceItemEntity>) {
     require(invoice.type == "SALE" || invoice.type == "PURCHASE") { "نوع الفاتورة غير صحيح" }
+    require(dao.getWarehouseByName(invoice.warehouseName) != null) {
+      "المخزن المحدد غير موجود في قاعدة البيانات"
+    }
+    require(dao.getCurrencyByName(invoice.currency) != null) {
+      "العملة المحددة غير موجودة في قاعدة البيانات"
+    }
     require(items.isNotEmpty()) { "لا يمكن حفظ فاتورة بدون أصناف" }
     require(items.all {
       it.itemId > 0L && it.quantity.isFinite() && it.quantity > 0.0 &&
@@ -221,6 +227,12 @@ class AccountingRepository(
     require(voucher.amount > 0.0 && voucher.amount.isFinite()) {
       "قيمة السند يجب أن تكون أكبر من صفر"
     }
+    require(voucher.accountName.isNotBlank() && dao.getAccountByName(voucher.accountName) != null) {
+      "الحساب المحدد للسند غير موجود في قاعدة البيانات"
+    }
+    require(dao.getCurrencyByName(voucher.currency) != null) {
+      "العملة المحددة للسند غير موجودة في قاعدة البيانات"
+    }
     val operation: suspend () -> Long = {
       val id = dao.insertVoucher(voucher)
       if (voucher.accountName.isNotBlank()) dao.adjustAccountBalance(voucher.accountName, -voucher.amount)
@@ -232,6 +244,12 @@ class AccountingRepository(
   suspend fun updateVoucher(voucher: VoucherEntity) {
     require(voucher.amount > 0.0 && voucher.amount.isFinite()) {
       "قيمة السند يجب أن تكون أكبر من صفر"
+    }
+    require(voucher.accountName.isNotBlank() && dao.getAccountByName(voucher.accountName) != null) {
+      "الحساب المحدد للسند غير موجود في قاعدة البيانات"
+    }
+    require(dao.getCurrencyByName(voucher.currency) != null) {
+      "العملة المحددة للسند غير موجودة في قاعدة البيانات"
     }
     val operation: suspend () -> Unit = {
       val previous = dao.getVoucherById(voucher.id)
@@ -315,8 +333,12 @@ class AccountingRepository(
     dao.updateWarehouseOperation(op)
   }
 
-  private fun validateWarehouseOperation(op: WarehouseOperationEntity) {
+  private suspend fun validateWarehouseOperation(op: WarehouseOperationEntity) {
     require(op.operationType.isNotBlank() && op.warehouseName.isNotBlank()) { "نوع العملية والمخزن مطلوبان" }
+    require(dao.getWarehouseByName(op.warehouseName) != null) { "المخزن المحدد غير موجود في قاعدة البيانات" }
+    if (op.targetWarehouseName.isNotBlank()) {
+      require(dao.getWarehouseByName(op.targetWarehouseName) != null) { "المخزن الهدف غير موجود في قاعدة البيانات" }
+    }
     require(op.totalItems >= 0 && op.totalCost.isFinite() && op.totalCost >= 0.0) { "كمية العملية أو تكلفتها غير صالحة" }
   }
   suspend fun deleteOperation(op: WarehouseOperationEntity) = dao.deleteWarehouseOperation(op)
