@@ -112,10 +112,13 @@ class AccountingRepository(
   suspend fun getInvoiceItemsSync(invoiceId: Long): List<InvoiceItemEntity> = dao.getInvoiceItemsSync(invoiceId)
 
   suspend fun createInvoice(invoice: InvoiceEntity, items: List<InvoiceItemEntity>): Long {
-    validateInvoice(invoice, items)
     return if (database != null) {
-      database.withTransaction { createInvoiceInTransaction(invoice, items) }
+      database.withTransaction {
+        validateInvoice(invoice, items)
+        createInvoiceInTransaction(invoice, items)
+      }
     } else {
+      validateInvoice(invoice, items)
       createInvoiceInTransaction(invoice, items)
     }
   }
