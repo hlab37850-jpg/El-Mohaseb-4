@@ -52,6 +52,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableDoubleStateOf
@@ -85,11 +86,30 @@ fun CreateInvoiceScreen(
   val availableCurrencies by viewModel.allCurrencies.collectAsState()
   val availableAccounts by viewModel.allAccounts.collectAsState()
   val availableItems by viewModel.allItems.collectAsState()
+  val activeWarehouse by viewModel.activeWarehouse.collectAsState()
+  val activeCurrency by viewModel.activeCurrency.collectAsState()
 
   var isCredit by remember { mutableStateOf(true) } // آجل vs نقد
   var isReturn by remember { mutableStateOf(false) } // مرتجع
-  var warehouseName by remember { mutableStateOf(availableWarehouses.firstOrNull()?.name ?: "المخزن الرئيسي") }
-  var currency by remember { mutableStateOf(availableCurrencies.firstOrNull()?.name ?: "محلي") }
+  var warehouseName by remember { mutableStateOf(activeWarehouse) }
+  var currency by remember { mutableStateOf(activeCurrency) }
+
+  LaunchedEffect(availableWarehouses, activeWarehouse) {
+    warehouseName = when {
+      availableWarehouses.any { it.name == activeWarehouse } -> activeWarehouse
+      availableWarehouses.isNotEmpty() && availableWarehouses.none { it.name == warehouseName } ->
+        availableWarehouses.first().name
+      else -> warehouseName
+    }
+  }
+  LaunchedEffect(availableCurrencies, activeCurrency) {
+    currency = when {
+      availableCurrencies.any { it.name == activeCurrency } -> activeCurrency
+      availableCurrencies.isNotEmpty() && availableCurrencies.none { it.name == currency } ->
+        availableCurrencies.first().name
+      else -> currency
+    }
+  }
   var partyName by remember { mutableStateOf("") }
   var invoiceDate by remember { mutableStateOf(viewModel.todayFormatted) }
   var invoiceNumber by remember { mutableStateOf((System.currentTimeMillis() % 10000).toString()) }
@@ -273,6 +293,7 @@ fun CreateInvoiceScreen(
                   text = { Text(wh.name) },
                   onClick = {
                     warehouseName = wh.name
+                    viewModel.setActiveWarehouse(wh.name)
                     showWarehousePicker = false
                   }
                 )
@@ -302,6 +323,7 @@ fun CreateInvoiceScreen(
                   text = { Text("${curr.name} (${curr.symbol})") },
                   onClick = {
                     currency = curr.name
+                    viewModel.setActiveCurrency(curr.name)
                     showCurrencyPicker = false
                   }
                 )
