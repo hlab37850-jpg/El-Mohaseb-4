@@ -170,8 +170,7 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
       showMessage("راجع الخصم والضريبة والرسوم والمبلغ المدفوع")
       return
     }
-    val netTotal = (subtotal - discount + tax + otherFees).coerceAtLeast(0.0)
-    val remaining = (netTotal - paidAmount).coerceAtLeast(0.0)
+    val remaining = netTotal - paidAmount
 
     val invoice = InvoiceEntity(
       invoiceNumber = invoiceNumber.ifBlank { System.currentTimeMillis().toString().takeLast(4) },
