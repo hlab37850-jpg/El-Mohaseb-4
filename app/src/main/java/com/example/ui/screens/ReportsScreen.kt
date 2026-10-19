@@ -154,7 +154,7 @@ fun ItemMovementsReport(items: List<com.example.data.model.ItemEntity>) {
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
       items(items) { item ->
-        val incoming = item.openingQuantity + 5.0
+        val incoming = item.openingQuantity
         val outgoing = (incoming - item.currentStock).coerceAtLeast(0.0)
         Row(
           modifier = Modifier
