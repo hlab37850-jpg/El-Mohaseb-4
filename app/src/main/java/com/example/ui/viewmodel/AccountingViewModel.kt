@@ -334,13 +334,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun updateAccount(account: AccountEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateAccount(account: AccountEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث بيانات الحساب: ${account.name}", onSuccess) {
       repository.updateAccount(account)
-      showMessage("تم تحديث بيانات الحساب: ${account.name}")
-      onSuccess()
     }
-  }
 
   fun deleteAccount(account: AccountEntity, onSuccess: () -> Unit = {}) =
     performDbAction("تم حذف الحساب: ${account.name}", onSuccess) {
@@ -386,13 +383,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun updateItem(item: ItemEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateItem(item: ItemEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث بيانات الصنف: ${item.name}", onSuccess) {
       repository.updateItem(item)
-      showMessage("تم تحديث بيانات الصنف: ${item.name}")
-      onSuccess()
     }
-  }
 
   fun deleteItem(item: ItemEntity, onSuccess: () -> Unit = {}) =
     performDbAction("تم حذف الصنف: ${item.name}", onSuccess) {
@@ -408,13 +402,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun updateWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث بيانات المخزن: ${warehouse.name}", onSuccess) {
       repository.updateWarehouse(warehouse)
-      showMessage("تم تحديث بيانات المخزن: ${warehouse.name}")
-      onSuccess()
     }
-  }
 
   fun deleteWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) =
     performDbAction("تم حذف المخزن: ${warehouse.name}", onSuccess) {
@@ -432,13 +423,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun updateCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث سعر صرف عملة: ${currency.name}", onSuccess) {
       repository.updateCurrency(currency)
-      showMessage("تم تحديث سعر صرف عملة: ${currency.name}")
-      onSuccess()
     }
-  }
 
   fun deleteCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) =
     performDbAction("تم حذف عملة: ${currency.name}", onSuccess) {
@@ -475,13 +463,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
-  fun updateWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) {
-    viewModelScope.launch {
+  fun updateWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم تحديث العملية المخزنية #${op.operationNumber}", onSuccess) {
       repository.updateOperation(op)
-      showMessage("تم تحديث العملية المخزنية #${op.operationNumber}")
-      onSuccess()
     }
-  }
 
   fun deleteWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) =
     performDbAction("تم حذف العملية المخزنية #${op.operationNumber}", onSuccess) {
