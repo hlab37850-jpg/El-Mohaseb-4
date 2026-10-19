@@ -31,7 +31,13 @@ class AccountingRepository(
     require(account.balance.isFinite()) { "رصيد الحساب غير صالح" }
     dao.updateAccount(account)
   }
-  suspend fun deleteAccount(account: AccountEntity) = dao.deleteAccount(account)
+  suspend fun deleteAccount(account: AccountEntity) {
+    require(account.balance == 0.0) { "لا يمكن حذف حساب له رصيد؛ صفّر الرصيد أو سوّه أولًا" }
+    require(dao.countInvoicesForParty(account.name) == 0 && dao.countVouchersForAccount(account.name) == 0) {
+      "لا يمكن حذف الحساب لأنه مرتبط بفواتير أو سندات محفوظة"
+    }
+    dao.deleteAccount(account)
+  }
 
   // Items
   val allItems: Flow<List<ItemEntity>> = dao.getAllItems()
@@ -51,7 +57,12 @@ class AccountingRepository(
     require(listOf(item.costPrice, item.sellingPrice, item.openingQuantity, item.currentStock)
       .all { it.isFinite() && it >= 0.0 }) { "أسعار الصنف وكمياته يجب أن تكون أرقامًا غير سالبة" }
   }
-  suspend fun deleteItem(item: ItemEntity) = dao.deleteItem(item)
+  suspend fun deleteItem(item: ItemEntity) {
+    require(dao.countInvoiceLinesForItem(item.id) == 0) {
+      "لا يمكن حذف الصنف لأنه مستخدم في فواتير محفوظة"
+    }
+    dao.deleteItem(item)
+  }
 
   // Warehouses
   val allWarehouses: Flow<List<WarehouseEntity>> = dao.getAllWarehouses()
@@ -63,7 +74,12 @@ class AccountingRepository(
     require(warehouse.name.isNotBlank()) { "اسم المخزن مطلوب" }
     dao.updateWarehouse(warehouse)
   }
-  suspend fun deleteWarehouse(warehouse: WarehouseEntity) = dao.deleteWarehouse(warehouse)
+  suspend fun deleteWarehouse(warehouse: WarehouseEntity) {
+    require(dao.countInvoicesForWarehouse(warehouse.name) == 0 && dao.countOperationsForWarehouse(warehouse.name) == 0) {
+      "لا يمكن حذف المخزن لأنه مرتبط بفواتير أو عمليات مخزنية"
+    }
+    dao.deleteWarehouse(warehouse)
+  }
 
   // Invoices
   val allInvoices: Flow<List<InvoiceEntity>> = dao.getAllInvoices()
@@ -232,7 +248,12 @@ class AccountingRepository(
     require(currency.name.isNotBlank() && currency.symbol.isNotBlank()) { "اسم العملة ورمزها مطلوبان" }
     require(currency.exchangeRate.isFinite() && currency.exchangeRate > 0.0) { "سعر الصرف يجب أن يكون رقمًا أكبر من صفر" }
   }
-  suspend fun deleteCurrency(currency: CurrencyEntity) = dao.deleteCurrency(currency)
+  suspend fun deleteCurrency(currency: CurrencyEntity) {
+    require(dao.countInvoicesForCurrency(currency.name) == 0 && dao.countVouchersForCurrency(currency.name) == 0) {
+      "لا يمكن حذف العملة لأنها مستخدمة في فواتير أو سندات محفوظة"
+    }
+    dao.deleteCurrency(currency)
+  }
 
   // Persisted application settings
   val allSettings: Flow<List<AppSettingEntity>> = dao.getAllSettings()
