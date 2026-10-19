@@ -18,6 +18,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
@@ -31,7 +32,12 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
   val activeWarehouse: StateFlow<String> = _activeWarehouse.asStateFlow()
 
   fun setActiveWarehouse(name: String) {
-    _activeWarehouse.value = name
+    if (name.isBlank()) return
+    viewModelScope.launch {
+      runCatching { repository.saveSettings(mapOf("active_warehouse" to name)) }
+        .onSuccess { _activeWarehouse.value = name }
+        .onFailure { showMessage(it.message ?: "تعذر حفظ المخزن النشط") }
+    }
   }
 
   // Active Currency
@@ -39,7 +45,23 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
   val activeCurrency: StateFlow<String> = _activeCurrency.asStateFlow()
 
   fun setActiveCurrency(curr: String) {
-    _activeCurrency.value = curr
+    if (curr.isBlank()) return
+    viewModelScope.launch {
+      runCatching { repository.saveSettings(mapOf("active_currency" to curr)) }
+        .onSuccess { _activeCurrency.value = curr }
+        .onFailure { showMessage(it.message ?: "تعذر حفظ العملة النشطة") }
+    }
+  }
+
+  init {
+    viewModelScope.launch {
+      repository.allSettings.collect { settings ->
+        settings.firstOrNull { it.settingKey == "active_warehouse" }
+          ?.settingValue?.takeIf { it.isNotBlank() }?.let { _activeWarehouse.value = it }
+        settings.firstOrNull { it.settingKey == "active_currency" }
+          ?.settingValue?.takeIf { it.isNotBlank() }?.let { _activeCurrency.value = it }
+      }
+    }
   }
 
   // Data streams from Room
