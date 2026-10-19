@@ -539,6 +539,8 @@ fun CreateInvoiceScreen(
   // Dialog: Add Item Line (Matching video 00:20 - 00:27)
   if (showAddItemDialog) {
     var selectedItem by remember { mutableStateOf<ItemEntity?>(availableItems.firstOrNull()) }
+    var itemSearchText by remember { mutableStateOf(availableItems.firstOrNull()?.name.orEmpty()) }
+    var showItemSuggestions by remember { mutableStateOf(false) }
     var quantityText by remember { mutableStateOf("1.0") }
     var priceText by remember {
       mutableStateOf(
@@ -564,33 +566,71 @@ fun CreateInvoiceScreen(
       },
       text = {
         Column {
-          Text("اختر الصنف من قاعدة البيانات:", fontSize = 12.sp, color = Color.Gray)
+          Text("ابحث عن الصنف بالاسم أو الرمز:", fontSize = 12.sp, color = Color.Gray)
           Spacer(modifier = Modifier.height(4.dp))
 
-          LazyRow(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(6.dp)
-          ) {
-            items(availableItems) { itm ->
-              val isSel = itm.id == selectedItem?.id
-              Box(
-                modifier = Modifier
-                  .clip(RoundedCornerShape(8.dp))
-                  .background(if (isSel) MohasebPrimaryBlue else Color(0xFFE2E8F0))
-                  .clickable {
-                    selectedItem = itm
-                    priceText = if (invoiceType == "SALE") itm.sellingPrice.toString() else itm.costPrice.toString()
-                  }
-                  .padding(horizontal = 10.dp, vertical = 6.dp)
-              ) {
-                Text(
-                  text = itm.name,
-                  color = if (isSel) Color.White else Color.Black,
-                  fontSize = 12.sp,
-                  fontWeight = FontWeight.Medium
+          Box(modifier = Modifier.fillMaxWidth()) {
+            OutlinedTextField(
+              value = itemSearchText,
+              onValueChange = {
+                itemSearchText = it
+                showItemSuggestions = true
+              },
+              label = { Text("الصنف") },
+              placeholder = { Text("اكتب اسم الصنف أو رمزه...") },
+              modifier = Modifier
+                .fillMaxWidth()
+                .testTag("input_invoice_item_search"),
+              singleLine = true,
+              trailingIcon = {
+                IconButton(onClick = { showItemSuggestions = !showItemSuggestions }) {
+                  Icon(Icons.Default.MoreVert, contentDescription = "عرض الأصناف")
+                }
+              }
+            )
+            DropdownMenu(
+              expanded = showItemSuggestions,
+              onDismissRequest = { showItemSuggestions = false },
+              modifier = Modifier.fillMaxWidth(0.95f)
+            ) {
+              val matchingItems = availableItems.filter {
+                itemSearchText.isBlank() ||
+                  it.name.contains(itemSearchText.trim(), ignoreCase = true) ||
+                  it.code.contains(itemSearchText.trim(), ignoreCase = true)
+              }.take(50)
+              if (matchingItems.isEmpty()) {
+                DropdownMenuItem(
+                  text = { Text("لا توجد أصناف مطابقة") },
+                  onClick = { showItemSuggestions = false },
+                  enabled = false
                 )
+              } else {
+                matchingItems.forEach { itm ->
+                  DropdownMenuItem(
+                    text = {
+                      Column {
+                        Text(itm.name, fontWeight = FontWeight.Medium)
+                        Text(
+                          "الرمز: ${itm.code} • المتوفر: ${"%.2f".format(itm.currentStock)}",
+                          fontSize = 11.sp,
+                          color = Color.Gray
+                        )
+                      }
+                    },
+                    onClick = {
+                      selectedItem = itm
+                      itemSearchText = itm.name
+                      priceText = if (invoiceType == "SALE") itm.sellingPrice.toString() else itm.costPrice.toString()
+                      showItemSuggestions = false
+                    }
+                  )
+                }
               }
             }
+          }
+
+          if (availableItems.isEmpty()) {
+            Text("لا توجد أصناف في قاعدة البيانات؛ أضف صنفًا أولًا.", color = Color.Red, fontSize = 12.sp)
           }
 
           Spacer(modifier = Modifier.height(10.dp))
