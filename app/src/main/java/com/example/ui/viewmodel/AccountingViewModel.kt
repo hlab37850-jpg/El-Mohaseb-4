@@ -227,9 +227,14 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
 
   fun updateVoucher(voucher: VoucherEntity, onSuccess: () -> Unit = {}) {
     viewModelScope.launch {
-      repository.updateVoucher(voucher)
-      showMessage("تم تحديث بيانات السند رقم ${voucher.voucherNumber}")
-      onSuccess()
+      runCatching { repository.updateVoucher(voucher) }
+        .onSuccess {
+          showMessage("تم تحديث بيانات السند رقم ${voucher.voucherNumber}")
+          onSuccess()
+        }
+        .onFailure { error ->
+          showMessage(error.message ?: "تعذر تحديث السند")
+        }
     }
   }
 
