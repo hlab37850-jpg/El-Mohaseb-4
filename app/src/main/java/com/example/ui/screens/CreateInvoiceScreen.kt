@@ -574,6 +574,7 @@ fun CreateInvoiceScreen(
               value = itemSearchText,
               onValueChange = {
                 itemSearchText = it
+                selectedItem = null
                 showItemSuggestions = true
               },
               label = { Text("الصنف") },
@@ -673,8 +674,8 @@ fun CreateInvoiceScreen(
       confirmButton = {
         Button(
           onClick = {
-            val itemToAdd = selectedItem ?: availableItems.firstOrNull()
-            if (itemToAdd != null && qVal > 0 && pVal > 0) {
+            val itemToAdd = selectedItem
+            if (itemToAdd != null && qVal > 0 && pVal >= 0 && qVal.isFinite() && pVal.isFinite()) {
               lineItems.add(
                 InvoiceItemEntity(
                   invoiceId = 0,
@@ -687,7 +688,7 @@ fun CreateInvoiceScreen(
               )
               showAddItemDialog = false
             } else {
-              viewModel.showMessage("يرجى إدخال كمية وسعر صالحين")
+              viewModel.showMessage(if (itemToAdd == null) "اختر صنفًا من نتائج البحث أولًا" else "يرجى إدخال كمية وسعر صالحين")
             }
           },
           colors = ButtonDefaults.buttonColors(containerColor = MohasebPrimaryBlue),
