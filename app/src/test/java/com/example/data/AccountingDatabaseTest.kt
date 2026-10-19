@@ -156,10 +156,15 @@ class AccountingDatabaseTest {
     assertNotNull(accAfterReceipt)
     assertEquals(7000.0, accAfterReceipt!!.balance, 0.001)
 
-    // Delete voucher reverses the balance back to 10000
+    // Editing the amount must reverse the previous impact and apply the new amount.
     val savedVoucher = dao.getAllVouchers().first()[0]
-    repository.deleteVoucher(savedVoucher)
+    repository.updateVoucher(savedVoucher.copy(amount = 4000.0))
+    val accAfterUpdate = dao.getAccountByName("مؤسسة الهدى")
+    assertEquals(6000.0, accAfterUpdate!!.balance, 0.001)
 
+    // Deleting the edited voucher reverses its latest impact exactly once.
+    val updatedVoucher = dao.getAllVouchers().first()[0]
+    repository.deleteVoucher(updatedVoucher)
     val accAfterDelete = dao.getAccountByName("مؤسسة الهدى")
     assertEquals(10000.0, accAfterDelete!!.balance, 0.001)
   }
