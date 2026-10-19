@@ -56,6 +56,18 @@ abstract class MohasebDatabase : RoomDatabase() {
         )
           // Preserve existing accounting data and migrate schema changes explicitly.
           .addMigrations(MIGRATION_1_2)
+          .addCallback(object : RoomDatabase.Callback() {
+            override fun onCreate(db: SupportSQLiteDatabase) {
+              super.onCreate(db)
+              // Minimal system defaults required by the existing invoice pickers; no demo transactions.
+              db.execSQL(
+                "INSERT INTO warehouses (id, name, phone, address) VALUES (1, 'المخزن الرئيسي', '', '')"
+              )
+              db.execSQL(
+                "INSERT INTO currencies (id, name, symbol, subUnit, exchangeRate, accountCount) VALUES (1, 'محلي', 'YR', 'جزء', 1.0, 0)"
+              )
+            }
+          })
           .build()
           .also { INSTANCE = it }
       }
