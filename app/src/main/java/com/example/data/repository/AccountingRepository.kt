@@ -4,6 +4,7 @@ import androidx.room.withTransaction
 import com.example.data.local.AccountingDao
 import com.example.data.local.MohasebDatabase
 import com.example.data.model.AccountEntity
+import com.example.data.model.AppSettingEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
@@ -192,6 +193,19 @@ class AccountingRepository(
   suspend fun insertCurrency(currency: CurrencyEntity): Long = dao.insertCurrency(currency)
   suspend fun updateCurrency(currency: CurrencyEntity) = dao.updateCurrency(currency)
   suspend fun deleteCurrency(currency: CurrencyEntity) = dao.deleteCurrency(currency)
+
+  // Persisted application settings
+  val allSettings: Flow<List<AppSettingEntity>> = dao.getAllSettings()
+
+  suspend fun saveSettings(settings: Map<String, String>) {
+    require(settings.keys.all { it.isNotBlank() }) { "مفتاح الإعداد غير صالح" }
+    val rows = settings.map { (key, value) -> AppSettingEntity(key, value) }
+    if (database != null) {
+      database.withTransaction { dao.upsertSettings(rows) }
+    } else {
+      dao.upsertSettings(rows)
+    }
+  }
 
   // Warehouse Operations
   val allOperations: Flow<List<WarehouseOperationEntity>> = dao.getAllWarehouseOperations()
