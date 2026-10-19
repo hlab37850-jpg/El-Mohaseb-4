@@ -94,6 +94,9 @@ interface AccountingDao {
   @Query("SELECT * FROM warehouses WHERE id = :id LIMIT 1")
   suspend fun getWarehouseById(id: Long): WarehouseEntity?
 
+  @Query("SELECT * FROM warehouses WHERE name = :name LIMIT 1")
+  suspend fun getWarehouseByName(name: String): WarehouseEntity?
+
   @Query("UPDATE invoices SET warehouseName = :newName WHERE warehouseName = :oldName")
   suspend fun renameInvoiceWarehouse(oldName: String, newName: String)
 
@@ -180,6 +183,9 @@ interface AccountingDao {
 
   @Query("SELECT * FROM currencies WHERE id = :id LIMIT 1")
   suspend fun getCurrencyById(id: Long): CurrencyEntity?
+
+  @Query("SELECT * FROM currencies WHERE name = :name LIMIT 1")
+  suspend fun getCurrencyByName(name: String): CurrencyEntity?
 
   @Query("UPDATE invoices SET currency = :newName WHERE currency = :oldName")
   suspend fun renameInvoiceCurrency(oldName: String, newName: String)
