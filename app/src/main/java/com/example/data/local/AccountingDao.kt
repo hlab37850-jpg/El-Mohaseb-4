@@ -60,6 +60,9 @@ interface AccountingDao {
   @Query("SELECT * FROM items WHERE id = :id")
   suspend fun getItemById(id: Long): ItemEntity?
 
+  @Query("SELECT COUNT(*) FROM invoice_items WHERE itemId = :itemId")
+  suspend fun countInvoiceLinesForItem(itemId: Long): Int
+
   @Query("UPDATE items SET currentStock = currentStock + :qtyChange WHERE id = :id")
   suspend fun adjustItemStock(id: Long, qtyChange: Double)
 
@@ -68,6 +71,12 @@ interface AccountingDao {
 
   @Query("UPDATE accounts SET balance = balance + :balanceChange WHERE name = :name")
   suspend fun adjustAccountBalance(name: String, balanceChange: Double)
+
+  @Query("SELECT COUNT(*) FROM invoices WHERE partyName = :name")
+  suspend fun countInvoicesForParty(name: String): Int
+
+  @Query("SELECT COUNT(*) FROM vouchers WHERE accountName = :name")
+  suspend fun countVouchersForAccount(name: String): Int
 
   // Warehouses
   @Query("SELECT * FROM warehouses ORDER BY id ASC")
@@ -84,6 +93,12 @@ interface AccountingDao {
 
   @Delete
   suspend fun deleteWarehouse(warehouse: WarehouseEntity)
+
+  @Query("SELECT COUNT(*) FROM invoices WHERE warehouseName = :name")
+  suspend fun countInvoicesForWarehouse(name: String): Int
+
+  @Query("SELECT COUNT(*) FROM warehouse_operations WHERE warehouseName = :name OR targetWarehouseName = :name")
+  suspend fun countOperationsForWarehouse(name: String): Int
 
   // Invoices
   @Query("SELECT * FROM invoices ORDER BY id DESC")
@@ -150,6 +165,12 @@ interface AccountingDao {
 
   @Delete
   suspend fun deleteCurrency(currency: CurrencyEntity)
+
+  @Query("SELECT COUNT(*) FROM invoices WHERE currency = :name")
+  suspend fun countInvoicesForCurrency(name: String): Int
+
+  @Query("SELECT COUNT(*) FROM vouchers WHERE currency = :name")
+  suspend fun countVouchersForCurrency(name: String): Int
 
   // App settings
   @Query("SELECT * FROM app_settings ORDER BY settingKey ASC")
