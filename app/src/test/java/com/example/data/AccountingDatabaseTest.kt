@@ -100,7 +100,8 @@ class AccountingDatabaseTest {
       isCredit = false,
       date = "2026-10-19",
       partyName = "عميل نقدي",
-      subtotal = 750.0
+      subtotal = 750.0,
+      remainingAmount = 750.0
     )
     val lineItems = listOf(
       InvoiceItemEntity(
