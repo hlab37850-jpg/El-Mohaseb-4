@@ -40,7 +40,7 @@ class AccountingDatabaseTest {
       .allowMainThreadQueries()
       .build()
     dao = db.accountingDao()
-    repository = AccountingRepository(dao)
+    repository = AccountingRepository(dao, db)
   }
 
   @After
