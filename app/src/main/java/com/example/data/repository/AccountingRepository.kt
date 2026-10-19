@@ -1,6 +1,8 @@
 package com.example.data.repository
 
+import androidx.room.withTransaction
 import com.example.data.local.AccountingDao
+import com.example.data.local.MohasebDatabase
 import com.example.data.model.AccountEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
@@ -11,7 +13,10 @@ import com.example.data.model.WarehouseEntity
 import com.example.data.model.WarehouseOperationEntity
 import kotlinx.coroutines.flow.Flow
 
-class AccountingRepository(private val dao: AccountingDao) {
+class AccountingRepository(
+  private val dao: AccountingDao,
+  private val database: MohasebDatabase? = null
+) {
   // Accounts
   val allAccounts: Flow<List<AccountEntity>> = dao.getAllAccounts()
   fun getAccountsByCategory(cat: String): Flow<List<AccountEntity>> = dao.getAccountsByCategory(cat)
@@ -39,11 +44,21 @@ class AccountingRepository(private val dao: AccountingDao) {
   suspend fun getInvoiceItemsSync(invoiceId: Long): List<InvoiceItemEntity> = dao.getInvoiceItemsSync(invoiceId)
 
   suspend fun createInvoice(invoice: InvoiceEntity, items: List<InvoiceItemEntity>): Long {
-    val invoiceId = dao.insertInvoice(invoice)
-    val populatedItems = items.map { it.copy(invoiceId = invoiceId) }
-    dao.insertInvoiceItems(populatedItems)
+    validateInvoice(invoice, items)
+    return if (database != null) {
+      database.withTransaction { createInvoiceInTransaction(invoice, items) }
+    } else {
+      createInvoiceInTransaction(invoice, items)
+    }
+  }
 
-    // Adjust item stocks based on transaction type
+  private suspend fun createInvoiceInTransaction(
+    invoice: InvoiceEntity,
+    items: List<InvoiceItemEntity>
+  ): Long {
+    val invoiceId = dao.insertInvoice(invoice)
+    dao.insertInvoiceItems(items.map { it.copy(invoiceId = invoiceId) })
+
     items.forEach { itemRow ->
       val qtyDelta = when {
         invoice.type == "SALE" && !invoice.isReturn -> -itemRow.quantity
@@ -52,26 +67,43 @@ class AccountingRepository(private val dao: AccountingDao) {
         invoice.type == "PURCHASE" && invoice.isReturn -> -itemRow.quantity
         else -> 0.0
       }
-      if (qtyDelta != 0.0) {
-        dao.adjustItemStock(itemRow.itemId, qtyDelta)
-      }
+      if (qtyDelta != 0.0) dao.adjustItemStock(itemRow.itemId, qtyDelta)
     }
 
-    // Adjust Account Balance if credit
     if (invoice.isCredit && invoice.partyName.isNotBlank()) {
-      val netBalanceImpact = if (invoice.type == "SALE") {
-        if (invoice.isReturn) -invoice.remainingAmount else invoice.remainingAmount
-      } else {
-        if (invoice.isReturn) -invoice.remainingAmount else invoice.remainingAmount
-      }
-      dao.adjustAccountBalance(invoice.partyName, netBalanceImpact)
+      val balanceDelta = if (invoice.isReturn) -invoice.remainingAmount else invoice.remainingAmount
+      dao.adjustAccountBalance(invoice.partyName, balanceDelta)
     }
-
     return invoiceId
   }
 
+  private fun validateInvoice(invoice: InvoiceEntity, items: List<InvoiceItemEntity>) {
+    require(invoice.type == "SALE" || invoice.type == "PURCHASE") { "نوع الفاتورة غير صحيح" }
+    require(items.isNotEmpty()) { "لا يمكن حفظ فاتورة بدون أصناف" }
+    require(items.all {
+      it.itemId > 0L && it.quantity.isFinite() && it.quantity > 0.0 &&
+        it.unitPrice.isFinite() && it.unitPrice >= 0.0 &&
+        it.total.isFinite() && it.total >= 0.0
+    }) { "بيانات الأصناف أو الكميات أو الأسعار غير صحيحة" }
+    require(listOf(invoice.subtotal, invoice.discount, invoice.tax, invoice.otherFees,
+      invoice.paidAmount, invoice.remainingAmount).all { it.isFinite() && it >= 0.0 }) {
+      "توجد مبالغ غير صالحة في الفاتورة"
+    }
+    require(invoice.remainingAmount + invoice.paidAmount <=
+      invoice.subtotal - invoice.discount + invoice.tax + invoice.otherFees + 0.000001) {
+      "المبالغ المدفوعة والمتبقية تتجاوز صافي الفاتورة"
+    }
+  }
+
   suspend fun deleteInvoice(invoice: InvoiceEntity) {
-    // 1. Fetch line items to reverse inventory
+    if (database != null) {
+      database.withTransaction { deleteInvoiceInTransaction(invoice) }
+    } else {
+      deleteInvoiceInTransaction(invoice)
+    }
+  }
+
+  private suspend fun deleteInvoiceInTransaction(invoice: InvoiceEntity) {
     val items = dao.getInvoiceItemsSync(invoice.id)
     items.forEach { itemRow ->
       val reverseQty = when {
@@ -81,22 +113,13 @@ class AccountingRepository(private val dao: AccountingDao) {
         invoice.type == "PURCHASE" && invoice.isReturn -> itemRow.quantity
         else -> 0.0
       }
-      if (reverseQty != 0.0) {
-        dao.adjustItemStock(itemRow.itemId, reverseQty)
-      }
+      if (reverseQty != 0.0) dao.adjustItemStock(itemRow.itemId, reverseQty)
     }
 
-    // 2. Reverse account balance if credit
     if (invoice.isCredit && invoice.partyName.isNotBlank()) {
-      val reverseBalance = if (invoice.type == "SALE") {
-        if (invoice.isReturn) invoice.remainingAmount else -invoice.remainingAmount
-      } else {
-        if (invoice.isReturn) invoice.remainingAmount else -invoice.remainingAmount
-      }
+      val reverseBalance = if (invoice.isReturn) invoice.remainingAmount else -invoice.remainingAmount
       dao.adjustAccountBalance(invoice.partyName, reverseBalance)
     }
-
-    // 3. Delete invoice items and invoice
     dao.deleteInvoiceItems(invoice.id)
     dao.deleteInvoice(invoice)
   }
@@ -106,42 +129,43 @@ class AccountingRepository(private val dao: AccountingDao) {
   fun getVouchersByType(type: String): Flow<List<VoucherEntity>> = dao.getVouchersByType(type)
 
   suspend fun insertVoucher(voucher: VoucherEntity): Long {
-    val id = dao.insertVoucher(voucher)
-    // Adjust account balance:
-    // If RECEIPT (قبض): decreases debt of customer (balance - amount)
-    // If PAYMENT (صرف): decreases debt to vendor (balance - amount)
-    if (voucher.accountName.isNotBlank()) {
-      val delta = if (voucher.type == "RECEIPT") -voucher.amount else -voucher.amount
-      dao.adjustAccountBalance(voucher.accountName, delta)
+    require(voucher.amount > 0.0 && voucher.amount.isFinite()) {
+      "قيمة السند يجب أن تكون أكبر من صفر"
     }
-    return id
+    val operation: suspend () -> Long = {
+      val id = dao.insertVoucher(voucher)
+      if (voucher.accountName.isNotBlank()) dao.adjustAccountBalance(voucher.accountName, -voucher.amount)
+      id
+    }
+    return if (database != null) database.withTransaction { operation() } else operation()
   }
 
   suspend fun updateVoucher(voucher: VoucherEntity) {
     require(voucher.amount > 0.0 && voucher.amount.isFinite()) {
       "قيمة السند يجب أن تكون أكبر من صفر"
     }
-    val previous = dao.getVoucherById(voucher.id)
-      ?: throw IllegalArgumentException("السند المراد تعديله غير موجود")
-
-    // Reverse the old balance effect before applying the edited voucher effect.
-    // This also handles changing the linked account or amount.
-    if (previous.accountName.isNotBlank()) {
-      dao.adjustAccountBalance(previous.accountName, previous.amount)
+    val operation: suspend () -> Unit = {
+      val previous = dao.getVoucherById(voucher.id)
+        ?: throw IllegalArgumentException("السند المراد تعديله غير موجود")
+      if (previous.accountName.isNotBlank()) {
+        dao.adjustAccountBalance(previous.accountName, previous.amount)
+      }
+      dao.updateVoucher(voucher)
+      if (voucher.accountName.isNotBlank()) {
+        dao.adjustAccountBalance(voucher.accountName, -voucher.amount)
+      }
     }
-    dao.updateVoucher(voucher)
-    if (voucher.accountName.isNotBlank()) {
-      dao.adjustAccountBalance(voucher.accountName, -voucher.amount)
-    }
+    if (database != null) database.withTransaction { operation() } else operation()
   }
 
   suspend fun deleteVoucher(voucher: VoucherEntity) {
-    // Reverse account balance adjustment
-    if (voucher.accountName.isNotBlank()) {
-      val delta = voucher.amount
-      dao.adjustAccountBalance(voucher.accountName, delta)
+    val operation: suspend () -> Unit = {
+      if (voucher.accountName.isNotBlank()) {
+        dao.adjustAccountBalance(voucher.accountName, voucher.amount)
+      }
+      dao.deleteVoucher(voucher)
     }
-    dao.deleteVoucher(voucher)
+    if (database != null) database.withTransaction { operation() } else operation()
   }
 
   // Currencies
