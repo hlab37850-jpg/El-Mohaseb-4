@@ -317,7 +317,7 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
       showMessage("اسم الحساب والتصنيف مطلوبان")
       return
     }
-    viewModelScope.launch {
+    performDbAction("تم إضافة الحساب: $name بنجاح", onSuccess) {
       repository.insertAccount(
         AccountEntity(
           name = name,
@@ -329,8 +329,7 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
           notifySMS = notifySMS
         )
       )
-      showMessage("تم إضافة الحساب: $name بنجاح")
-      onSuccess()
+      Unit
     }
   }
 
@@ -365,7 +364,7 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
       showMessage("تحقق من أسعار الصنف والكمية الافتتاحية")
       return
     }
-    viewModelScope.launch {
+    performDbAction("تم إضافة الصنف: $name بنجاح", onSuccess) {
       repository.insertItem(
         ItemEntity(
           code = code.ifBlank { "ITM-" + (System.currentTimeMillis() % 1000) },
@@ -378,8 +377,7 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
           currentStock = openingQty
         )
       )
-      showMessage("تم إضافة الصنف: $name بنجاح")
-      onSuccess()
+      Unit
     }
   }
 
@@ -394,13 +392,11 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
 
   // Warehouses CRUD
-  fun addWarehouse(name: String, phone: String, address: String, onSuccess: () -> Unit) {
-    viewModelScope.launch {
+  fun addWarehouse(name: String, phone: String, address: String, onSuccess: () -> Unit) =
+    performDbAction("تم إضافة المخزن: $name بنجاح", onSuccess) {
       repository.insertWarehouse(WarehouseEntity(name = name, phone = phone, address = address))
-      showMessage("تم إضافة المخزن: $name بنجاح")
-      onSuccess()
+      Unit
     }
-  }
 
   fun updateWarehouse(warehouse: WarehouseEntity, onSuccess: () -> Unit = {}) =
     performDbAction("تم تحديث بيانات المخزن: ${warehouse.name}", onSuccess) {
@@ -413,15 +409,13 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
 
   // Currencies CRUD
-  fun addCurrency(name: String, symbol: String, subUnit: String, rate: Double, onSuccess: () -> Unit) {
-    viewModelScope.launch {
+  fun addCurrency(name: String, symbol: String, subUnit: String, rate: Double, onSuccess: () -> Unit) =
+    performDbAction("تم إضافة العملة: $name بنجاح", onSuccess) {
       repository.insertCurrency(
         CurrencyEntity(name = name, symbol = symbol, subUnit = subUnit, exchangeRate = rate)
       )
-      showMessage("تم إضافة العملة: $name بنجاح")
-      onSuccess()
+      Unit
     }
-  }
 
   fun updateCurrency(currency: CurrencyEntity, onSuccess: () -> Unit = {}) =
     performDbAction("تم تحديث سعر صرف عملة: ${currency.name}", onSuccess) {
@@ -443,24 +437,21 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     totalItems: Int,
     totalCost: Double,
     onSuccess: () -> Unit
-  ) {
-    viewModelScope.launch {
-      repository.insertOperation(
-        WarehouseOperationEntity(
-          operationNumber = (System.currentTimeMillis() % 1000).toString(),
-          operationType = opType,
-          warehouseName = warehouse,
-          targetWarehouseName = toWarehouse,
-          date = todayFormatted,
-          partyOrAccount = party,
-          totalItems = totalItems,
-          totalCost = totalCost,
-          notes = notes
-        )
+  ) = performDbAction("تم تسجيل عملية $opType بنجاح", onSuccess) {
+    repository.insertOperation(
+      WarehouseOperationEntity(
+        operationNumber = (System.currentTimeMillis() % 1000).toString(),
+        operationType = opType,
+        warehouseName = warehouse,
+        targetWarehouseName = toWarehouse,
+        date = todayFormatted,
+        partyOrAccount = party,
+        totalItems = totalItems,
+        totalCost = totalCost,
+        notes = notes
       )
-      showMessage("تم تسجيل عملية $opType بنجاح")
-      onSuccess()
-    }
+    )
+    Unit
   }
 
   fun updateWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) =
