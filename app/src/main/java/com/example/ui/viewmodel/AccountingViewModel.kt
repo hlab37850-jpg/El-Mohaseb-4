@@ -257,6 +257,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     notifySMS: Boolean,
     onSuccess: () -> Unit
   ) {
+    if (name.isBlank() || category.isBlank()) {
+      showMessage("اسم الحساب والتصنيف مطلوبان")
+      return
+    }
     viewModelScope.launch {
       repository.insertAccount(
         AccountEntity(
@@ -301,6 +305,16 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     openingQty: Double,
     onSuccess: () -> Unit
   ) {
+    if (name.isBlank() || category.isBlank() || unit.isBlank()) {
+      showMessage("اسم الصنف والتصنيف والوحدة حقول مطلوبة")
+      return
+    }
+    if (!costPrice.isFinite() || costPrice < 0.0 ||
+        !sellingPrice.isFinite() || sellingPrice < 0.0 ||
+        !openingQty.isFinite() || openingQty < 0.0) {
+      showMessage("تحقق من أسعار الصنف والكمية الافتتاحية")
+      return
+    }
     viewModelScope.launch {
       repository.insertItem(
         ItemEntity(
