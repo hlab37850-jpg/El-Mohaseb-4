@@ -49,6 +49,18 @@ class AccountingDatabaseTest {
   }
 
   @Test
+  fun testAppSettingsPersistThroughRoom() = runBlocking {
+    repository.saveSettings(
+      mapOf(
+        "company_name" to "اختبار المنشأة",
+        "printer_thermal_enabled" to "true"
+      )
+    )
+    assertEquals("اختبار المنشأة", dao.getSetting("company_name")?.settingValue)
+    assertEquals("true", dao.getSetting("printer_thermal_enabled")?.settingValue)
+  }
+
+  @Test
   fun testAccountCRUD() = runBlocking {
     // 1. Create
     val id = repository.insertAccount(
