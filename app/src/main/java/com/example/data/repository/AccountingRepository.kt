@@ -118,9 +118,11 @@ class AccountingRepository(
       dao.getItemById(row.itemId) ?: throw IllegalArgumentException("أحد أصناف الفاتورة غير موجود في قاعدة البيانات")
     }
     if (invoice.type == "SALE" && !invoice.isReturn) {
-      items.forEachIndexed { index, row ->
-        require(itemRecords[index].currentStock >= row.quantity) {
-          "الكمية المتاحة غير كافية للصنف: ${itemRecords[index].name}"
+      items.groupBy { it.itemId }.forEach { (itemId, rows) ->
+        val item = itemRecords.first { it.id == itemId }
+        val requestedQuantity = rows.sumOf { it.quantity }
+        require(item.currentStock >= requestedQuantity) {
+          "الكمية المتاحة غير كافية للصنف: ${item.name}"
         }
       }
     }
