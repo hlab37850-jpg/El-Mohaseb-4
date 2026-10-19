@@ -63,7 +63,7 @@ class MainActivity : ComponentActivity() {
 
     // Initialize Room DB & Repository
     val database = MohasebDatabase.getDatabase(applicationContext, lifecycleScope)
-    val repository = AccountingRepository(database.accountingDao())
+    val repository = AccountingRepository(database.accountingDao(), database)
     val factory = AccountingViewModelFactory(repository)
     viewModel = ViewModelProvider(this, factory)[AccountingViewModel::class.java]
 
