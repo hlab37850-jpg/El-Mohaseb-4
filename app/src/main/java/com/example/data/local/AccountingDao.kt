@@ -69,6 +69,15 @@ interface AccountingDao {
   @Query("SELECT * FROM accounts WHERE name = :name LIMIT 1")
   suspend fun getAccountByName(name: String): AccountEntity?
 
+  @Query("SELECT * FROM accounts WHERE id = :id LIMIT 1")
+  suspend fun getAccountById(id: Long): AccountEntity?
+
+  @Query("UPDATE invoices SET partyName = :newName WHERE partyName = :oldName")
+  suspend fun renameInvoiceParty(oldName: String, newName: String)
+
+  @Query("UPDATE vouchers SET accountName = :newName WHERE accountName = :oldName")
+  suspend fun renameVoucherAccount(oldName: String, newName: String)
+
   @Query("UPDATE accounts SET balance = balance + :balanceChange WHERE name = :name")
   suspend fun adjustAccountBalance(name: String, balanceChange: Double)
 
