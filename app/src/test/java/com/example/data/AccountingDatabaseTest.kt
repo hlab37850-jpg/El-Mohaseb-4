@@ -86,8 +86,10 @@ class AccountingDatabaseTest {
     assertEquals("779999999", updated.phone)
     assertEquals(6000.0, updated.balance, 0.001)
 
-    // 4. Delete
-    repository.deleteAccount(updated)
+    // 4. Settle the balance before deletion; non-zero accounts must be protected.
+    val settled = updated.copy(balance = 0.0)
+    repository.updateAccount(settled)
+    repository.deleteAccount(settled)
     val emptyList = repository.allAccounts.first()
     assertTrue(emptyList.isEmpty())
   }
