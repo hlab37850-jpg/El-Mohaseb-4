@@ -41,7 +41,7 @@ fun MohasebTopBar(
       Text(
         text = title,
         color = Color.White,
-        fontSize = 17.sp,
+        fontSize = 18.sp,
         fontWeight = FontWeight.Bold,
         maxLines = 1,
         overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis

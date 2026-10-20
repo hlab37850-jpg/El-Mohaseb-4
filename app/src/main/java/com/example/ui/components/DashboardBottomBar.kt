@@ -42,13 +42,13 @@ fun DashboardBottomBar(
   Surface(
     modifier = Modifier
       .fillMaxWidth()
-      .height(52.dp),
+      .height(56.dp),
     color = MohasebPrimaryBlue
   ) {
     Row(
       modifier = Modifier
         .fillMaxWidth()
-        .padding(horizontal = 16.dp),
+        .padding(horizontal = 12.dp),
       verticalAlignment = Alignment.CenterVertically,
       horizontalArrangement = Arrangement.SpaceBetween
     ) {
@@ -59,7 +59,7 @@ fun DashboardBottomBar(
           .clip(RoundedCornerShape(6.dp))
           .background(Color(0xFFCC0000))
           .clickable { onYouTubeClick() }
-          .padding(horizontal = 8.dp, vertical = 4.dp)
+          .padding(horizontal = 8.dp, vertical = 5.dp)
           .testTag("youtube_button")
       ) {
         Icon(
@@ -72,7 +72,7 @@ fun DashboardBottomBar(
         Text(
           text = "YouTube",
           color = Color.White,
-          fontSize = 11.sp,
+          fontSize = 12.sp,
           fontWeight = FontWeight.Bold
         )
       }
@@ -83,7 +83,7 @@ fun DashboardBottomBar(
         modifier = Modifier
           .clip(RoundedCornerShape(8.dp))
           .clickable { onWarehouseClick() }
-          .padding(horizontal = 12.dp, vertical = 6.dp)
+          .padding(horizontal = 10.dp, vertical = 6.dp)
           .testTag("active_warehouse_indicator")
       ) {
         Icon(
@@ -96,17 +96,17 @@ fun DashboardBottomBar(
         Text(
           text = currentWarehouse,
           color = Color.White,
-          fontSize = 13.5.sp,
+          fontSize = 14.sp,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
           overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
         )
       }
 
-      // Right: Switch / Refresh icon
+      // Right: Switch / Refresh icon — larger touch target
       Box(
         modifier = Modifier
-          .size(36.dp)
+          .size(40.dp)
           .clip(RoundedCornerShape(8.dp))
           .clickable { onRefreshClick() }
           .testTag("bottom_switch_icon"),
