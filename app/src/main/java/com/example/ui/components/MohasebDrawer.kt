@@ -54,7 +54,7 @@ fun MohasebDrawerContent(
 ) {
   ModalDrawerSheet(
     modifier = Modifier
-      .width(280.dp)
+      .width(300.dp)
       .fillMaxHeight(),
     drawerContainerColor = Color.White
   ) {
@@ -90,13 +90,13 @@ fun MohasebDrawerContent(
             Text(
               text = "محاسب سوفت",
               color = Color.White,
-              fontSize = 18.sp,
+              fontSize = 19.sp,
               fontWeight = FontWeight.Bold
             )
             Text(
               text = "نظام الحسابات والمخازن",
               color = Color(0xFFE2E8F0),
-              fontSize = 12.sp
+              fontSize = 13.sp
             )
           }
         }
@@ -173,7 +173,7 @@ fun DrawerItem(
     modifier = Modifier
       .fillMaxWidth()
       .clickable { onClick() }
-      .padding(horizontal = 18.dp, vertical = 12.dp)
+      .padding(horizontal = 18.dp, vertical = 14.dp)
       .testTag(testTag),
     verticalAlignment = Alignment.CenterVertically
   ) {
@@ -181,12 +181,12 @@ fun DrawerItem(
       imageVector = icon,
       contentDescription = title,
       tint = tint,
-      modifier = Modifier.size(22.dp)
+      modifier = Modifier.size(24.dp)
     )
     Spacer(modifier = Modifier.width(16.dp))
     Text(
       text = title,
-      fontSize = 13.5.sp,
+      fontSize = 14.5.sp,
       fontWeight = FontWeight.Medium,
       color = Color(0xFF1E293B),
       maxLines = 1,

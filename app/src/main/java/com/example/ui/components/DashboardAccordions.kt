@@ -59,7 +59,7 @@ fun DashboardAccordions(
   Column(
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = 14.dp, vertical = 6.dp),
+      .padding(horizontal = 12.dp, vertical = 6.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp)
   ) {
     // 1. عمليات مخزنية
@@ -199,11 +199,11 @@ fun AccordionSection(
       .clip(RoundedCornerShape(8.dp))
       .border(1.dp, MohasebBorder, RoundedCornerShape(8.dp))
   ) {
-    // Header Bar
+    // Header Bar — 52.dp for better touch target across devices
     Surface(
       modifier = Modifier
         .fillMaxWidth()
-        .height(48.dp)
+        .height(52.dp)
         .clickable { onToggle() }
         .testTag(testTag),
       color = MohasebPrimaryBlue
@@ -219,12 +219,12 @@ fun AccordionSection(
           imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
           contentDescription = if (isExpanded) "طي" else "توسيع",
           tint = Color.White,
-          modifier = Modifier.size(22.dp)
+          modifier = Modifier.size(24.dp)
         )
         Text(
           text = title,
           color = Color.White,
-          fontSize = 14.5.sp,
+          fontSize = 15.sp,
           fontWeight = FontWeight.Bold,
           maxLines = 1,
           overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -248,14 +248,14 @@ fun AccordionSection(
             modifier = Modifier
               .fillMaxWidth()
               .clickable { onItemClick(subItem) }
-              .padding(horizontal = 16.dp, vertical = 11.dp)
-              .testTag("item_${subItem.replace(" ", "_")}"),
+              .padding(horizontal = 16.dp, vertical = 13.dp)
+              .testTag("item_${subItem.replace(\" \", \"_\")}"),
             contentAlignment = Alignment.CenterEnd
           ) {
             Text(
               text = subItem,
               color = Color(0xFF263238),
-              fontSize = 13.5.sp,
+              fontSize = 14.sp,
               fontWeight = FontWeight.Medium,
               maxLines = 1,
               overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
