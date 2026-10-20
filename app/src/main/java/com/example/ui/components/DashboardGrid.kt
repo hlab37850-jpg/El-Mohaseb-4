@@ -59,8 +59,8 @@ fun DashboardGrid(
   Column(
     modifier = Modifier
       .fillMaxWidth()
-      .padding(horizontal = 14.dp, vertical = 10.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp)
+      .padding(horizontal = 12.dp, vertical = 8.dp),
+    verticalArrangement = Arrangement.spacedBy(10.dp)
   ) {
     // Row 1: Vouchers (قبض/صرف) and Sales (المبيعات)
     Row(
@@ -137,7 +137,7 @@ fun QuickGridCard(
     Surface(
       modifier = Modifier
         .weight(1f)
-        .height(76.dp)
+        .height(80.dp)
         .shadow(4.dp, RoundedCornerShape(14.dp))
         .clip(RoundedCornerShape(14.dp))
         .border(1.5.dp, Color(0xFF80DEEA), RoundedCornerShape(14.dp))
@@ -167,15 +167,15 @@ fun QuickGridCard(
             imageVector = icon,
             contentDescription = title,
             tint = Color.White,
-            modifier = Modifier.size(24.dp)
+            modifier = Modifier.size(26.dp)
           )
-          Spacer(modifier = Modifier.height(2.dp))
+          Spacer(modifier = Modifier.height(3.dp))
           Text(
             text = title,
             color = Color.White,
-            fontSize = 13.5.sp,
+            fontSize = 14.sp,
             fontWeight = FontWeight.Bold,
-            lineHeight = 16.sp,
+            lineHeight = 17.sp,
             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
             maxLines = 2,
             overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
@@ -184,12 +184,12 @@ fun QuickGridCard(
       }
     }
 
-    // Circled (+) button if applicable
+    // Circled (+) button if applicable — larger touch target for all devices
     if (showAddButton && onAddClick != null) {
       Spacer(modifier = Modifier.width(6.dp))
       Box(
         modifier = Modifier
-          .size(38.dp)
+          .size(42.dp)
           .shadow(3.dp, CircleShape)
           .clip(CircleShape)
           .background(Color(0xFF004D40))
