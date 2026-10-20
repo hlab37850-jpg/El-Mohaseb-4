@@ -247,6 +247,7 @@ class AccountingDatabaseTest {
     assertTrue(rejected.isFailure)
     // A posting after the closing date is still accepted.
     repository.insertJournalEntry(oldEntry.copy(date = "2026-01-02"))
+    Unit // JUnit 4 test methods must return Unit.
   }
 
   @Test
