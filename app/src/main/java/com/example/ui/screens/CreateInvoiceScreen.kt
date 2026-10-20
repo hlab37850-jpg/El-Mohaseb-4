@@ -187,6 +187,8 @@ fun CreateInvoiceScreen(
   val netTotal = (subtotal - discount + taxAmount + otherFees).coerceAtLeast(0.0)
   val remainingBalance = (netTotal - paidAmount).coerceAtLeast(0.0)
 
+  val isSaleSide = invoiceType == "SALE" || invoiceType == "QUOTE"
+
   fun currentInvoiceTable(): ReportTable {
     val draft = InvoiceEntity(
       invoiceNumber = invoiceNumber,
@@ -208,7 +210,6 @@ fun CreateInvoiceScreen(
     return ListTables.invoiceDocument(draft, lineItems.toList())
   }
 
-  val isSaleSide = invoiceType == "SALE" || invoiceType == "QUOTE"
   val screenTitle = when (invoiceType) {
     "QUOTE" -> "فاتورة عرض سعر"
     "PURCHASE_ORDER" -> "طلب شراء"
