@@ -61,7 +61,11 @@ fun DashboardScreen(
   onNavigateToCurrencies: () -> Unit,
   onNavigateToReports: (String) -> Unit,
   onNavigateToSettings: () -> Unit,
-  onNavigateToNotifications: () -> Unit
+  onNavigateToNotifications: () -> Unit,
+  onNavigateToDocuments: (String) -> Unit = {},
+  onBackupRequested: () -> Unit = {},
+  onRestoreRequested: () -> Unit = {},
+  onExitRequested: () -> Unit = {}
 ) {
   val drawerState = rememberDrawerState(initialValue = DrawerValue.Closed)
   val scope = rememberCoroutineScope()
@@ -75,13 +79,7 @@ fun DashboardScreen(
   var showYearEndClosingDialog by remember { mutableStateOf(false) }
   var showSwitchWarehouseDialog by remember { mutableStateOf(false) }
   var showAboutDialog by remember { mutableStateOf(false) }
-
-  LaunchedEffect(userMessage) {
-    userMessage?.let {
-      snackbarHostState.showSnackbar(it)
-      viewModel.clearMessage()
-    }
-  }
+  var showRestoreConfirmDialog by remember { mutableStateOf(false) }
 
   ModalNavigationDrawer(
     drawerState = drawerState,
@@ -97,15 +95,16 @@ fun DashboardScreen(
         },
         onBackupClick = {
           scope.launch { drawerState.close() }
-          viewModel.showMessage("تم إنشاء نسخة احتياطية محلية بنجاح")
+          onBackupRequested()
         },
         onRestoreClick = {
           scope.launch { drawerState.close() }
-          viewModel.showMessage("قاعدة البيانات محدثة وجاهزة")
+          showRestoreConfirmDialog = true
         },
         onDriveClick = {
           scope.launch { drawerState.close() }
-          viewModel.showMessage("المزامنة مع جوجل درايف مفعلة")
+          viewModel.showMessage("اختر Google Drive من قائمة المواقع في نافذة الحفظ")
+          onBackupRequested()
         },
         onSupportClick = {
           scope.launch { drawerState.close() }
@@ -117,7 +116,7 @@ fun DashboardScreen(
         },
         onExitClick = {
           scope.launch { drawerState.close() }
-          viewModel.showMessage("تم تسجيل الخروج بنجاح")
+          onExitRequested()
         }
       )
     }
@@ -182,7 +181,8 @@ fun DashboardScreen(
             when (op) {
               "قيد يومي", "قيد إفتتاحي" -> onNavigateToNewVoucher(op)
               "إضافة حساب" -> onNavigateToAddAccount()
-              "حركة الصندوق", "دليل الحسابات" -> onNavigateToAccounts()
+              "حركة الصندوق" -> onNavigateToReports("حركة الصندوق")
+              "دليل الحسابات" -> onNavigateToAccounts()
               "إقفال سنوي" -> showYearEndClosingDialog = true
               else -> onNavigateToAccounts()
             }
@@ -190,8 +190,8 @@ fun DashboardScreen(
           onItemsOpClick = { op ->
             when (op) {
               "الأصناف", "أسعار البيع", "وحدات الصنف" -> onNavigateToItems()
-              "فاتورة عرض سعر" -> onNavigateToNewSale()
-              "طلب شراء" -> onNavigateToNewPurchase()
+              "فاتورة عرض سعر" -> onNavigateToDocuments("QUOTE")
+              "طلب شراء" -> onNavigateToDocuments("PURCHASE_ORDER")
               else -> onNavigateToItems()
             }
           },
@@ -268,23 +268,26 @@ fun DashboardScreen(
 
   // Dialog: Year-end Closing (from video 02:17)
   if (showYearEndClosingDialog) {
+    // Closes the previous calendar year; balances already carry forward as running account balances.
+    val closingDate = "${(viewModel.todayFormatted.take(4).toIntOrNull() ?: 2026) - 1}-12-31"
     AlertDialog(
       onDismissRequest = { showYearEndClosingDialog = false },
-      title = { Text("إغلاق سنوي حتى 31-12-2026", fontWeight = FontWeight.Bold) },
+      title = { Text("إغلاق سنوي حتى $closingDate", fontWeight = FontWeight.Bold) },
       text = {
         Column {
           Text("• عليك بعمل نسخة احتياطية قبل الإقفال.", fontSize = 13.sp)
           Text("• تأكد من مطابقة الجرد اليدوي مع المخزون المتبقي.", fontSize = 13.sp)
           Text("• تأكد من التسويات المخزنية اللازمة قبل الإغلاق.", fontSize = 13.sp)
           Text("• لن يتم السماح بإضافة فاتورة أو قيد للسنة المقفلة بعد الإغلاق.", fontSize = 13.sp)
-          Text("• سيتم نقل الفواتير والقيود كأرصدة افتتاحية للسنة الجديدة.", fontSize = 13.sp)
+          Text("• أرصدة الحسابات والمخزون تبقى كما هي وتُرحَّل تلقائيًا للسنة الجديدة.", fontSize = 13.sp)
         }
       },
       confirmButton = {
         TextButton(
           onClick = {
-            viewModel.showMessage("تم تأكيد الإقفال السنوي وترحيل الأرصدة")
-            showYearEndClosingDialog = false
+            viewModel.saveSettings(mapOf("closed_until" to closingDate)) {
+              showYearEndClosingDialog = false
+            }
           }
         ) {
           Text("تنفيذ الإقفال", color = Color.Red, fontWeight = FontWeight.Bold)
@@ -327,6 +330,22 @@ fun DashboardScreen(
           Text("إغلاق")
         }
       }
+    )
+  }
+
+  // Dialog: confirm restore (replaces all current data)
+  if (showRestoreConfirmDialog) {
+    AlertDialog(
+      onDismissRequest = { showRestoreConfirmDialog = false },
+      title = { Text("استرجاع نسخة احتياطية", fontWeight = FontWeight.Bold) },
+      text = { Text("سيتم استبدال جميع البيانات الحالية ببيانات النسخة المختارة ثم يُعاد تشغيل التطبيق. هل تريد المتابعة؟") },
+      confirmButton = {
+        TextButton(onClick = {
+          showRestoreConfirmDialog = false
+          onRestoreRequested()
+        }) { Text("اختيار النسخة", color = Color.Red, fontWeight = FontWeight.Bold) }
+      },
+      dismissButton = { TextButton(onClick = { showRestoreConfirmDialog = false }) { Text("إلغاء") } }
     )
   }
 

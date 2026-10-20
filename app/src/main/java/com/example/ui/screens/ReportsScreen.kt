@@ -1,12 +1,14 @@
 package com.example.ui.screens
 
+import com.example.ui.util.rememberExportActions
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.Print
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -22,31 +24,43 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.ScrollableTabRow
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Tab
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MohasebPrimaryBlue
+import com.example.ui.util.ReportBuilders
+import com.example.ui.util.ReportData
+import com.example.ui.util.ReportTable
 import com.example.ui.viewmodel.AccountingViewModel
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -56,30 +70,47 @@ fun ReportsScreen(
   viewModel: AccountingViewModel,
   onBack: () -> Unit
 ) {
+  val context = LocalContext.current
   val invoices by viewModel.allInvoices.collectAsState()
+  val invoiceItems by viewModel.allInvoiceItems.collectAsState()
   val items by viewModel.allItems.collectAsState()
   val accounts by viewModel.allAccounts.collectAsState()
   val vouchers by viewModel.allVouchers.collectAsState()
+  val journal by viewModel.allJournalEntries.collectAsState()
+  val currencies by viewModel.allCurrencies.collectAsState()
+  val userMessage by viewModel.userMessage.collectAsState()
+  val snackbarHostState = remember { SnackbarHostState() }
 
   val reportTabs = listOf("حركة الأصناف", "ميزان المراجعة", "قائمة الدخل", "المركز المالي", "تقارير أخرى")
-  val initialIndex = reportTabs.indexOfFirst { it.contains(initialReport) }.coerceAtLeast(0)
+  val isOtherReport = initialReport in ReportBuilders.otherReportNames
+  val initialIndex = if (isOtherReport) 4 else reportTabs.indexOfFirst { it.contains(initialReport) }.coerceAtLeast(0)
   var selectedTab by remember { mutableIntStateOf(initialIndex) }
+  var otherReport by remember { mutableStateOf<String?>(if (isOtherReport) initialReport else null) }
+  var statementAccount by remember { mutableStateOf("") }
+  val exports = rememberExportActions(viewModel)
+  val warehousesList by viewModel.allWarehouses.collectAsState()
+  val warehouseStockList by viewModel.allWarehouseStock.collectAsState()
 
-  // Figures are derived from saved records. Returns reduce their corresponding totals.
-  val totalSales = invoices.filter { it.type == "SALE" }.sumOf {
-    val amount = it.subtotal - it.discount + it.tax + it.otherFees
-    if (it.isReturn) -amount else amount
+  val data = ReportData(
+    invoices = invoices,
+    invoiceItems = invoiceItems,
+    items = items,
+    accounts = accounts,
+    vouchers = vouchers,
+    journal = journal,
+    currencies = currencies,
+    today = viewModel.todayFormatted,
+    warehouses = warehousesList,
+    warehouseStock = warehouseStockList
+  )
+
+  val currentTable: ReportTable? = when (selectedTab) {
+    0 -> ReportBuilders.itemMovements(data)
+    1 -> ReportBuilders.trialBalance(data)
+    2 -> ReportBuilders.incomeStatement(data)
+    3 -> ReportBuilders.balanceSheet(data)
+    else -> otherReport?.let { ReportBuilders.build(it, data, statementAccount) }
   }
-  val totalPurchases = invoices.filter { it.type == "PURCHASE" }.sumOf {
-    val amount = it.subtotal - it.discount + it.tax + it.otherFees
-    if (it.isReturn) -amount else amount
-  }
-  val totalReceipts = vouchers.filter { it.type == "RECEIPT" }.sumOf { it.amount }
-  val totalPayments = vouchers.filter { it.type == "PAYMENT" }.sumOf { it.amount }
-  // The schema does not yet track cost of goods sold or classify every payment as an expense.
-  // Avoid inventing a profit percentage: display the difference between recorded sales and purchases.
-  val grossProfit = totalSales - totalPurchases
-  val netProfit = grossProfit - totalPayments
 
   Scaffold(
     topBar = {
@@ -91,11 +122,29 @@ fun ReportsScreen(
           }
         },
         actions = {
-          IconButton(onClick = { viewModel.showMessage("تصدير التقرير كـ PDF...") }) {
+          IconButton(onClick = {
+            val table = currentTable
+            if (table == null) viewModel.showMessage("اختر تقريرًا أولًا") else exports.print(table)
+          }) {
+            Icon(Icons.Default.Print, contentDescription = "طباعة", tint = Color.White)
+          }
+          IconButton(onClick = {
+            val table = currentTable
+            if (table == null) viewModel.showMessage("اختر تقريرًا أولًا") else exports.excel(table)
+          }) {
             Box(
-              modifier = Modifier
-                .size(28.dp)
-                .background(Color(0xFFE53935), CircleShape),
+              modifier = Modifier.size(28.dp).background(Color(0xFF2E7D32), CircleShape),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(Icons.Default.Description, contentDescription = "Excel", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+          }
+          IconButton(onClick = {
+            val table = currentTable
+            if (table == null) viewModel.showMessage("اختر تقريرًا أولًا") else exports.pdf(table)
+          }) {
+            Box(
+              modifier = Modifier.size(28.dp).background(Color(0xFFE53935), CircleShape),
               contentAlignment = Alignment.Center
             ) {
               Icon(Icons.Default.PictureAsPdf, contentDescription = "PDF", tint = Color.White, modifier = Modifier.size(16.dp))
@@ -105,13 +154,10 @@ fun ReportsScreen(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MohasebPrimaryBlue)
       )
     },
+    snackbarHost = { SnackbarHost(snackbarHostState) },
     containerColor = Color(0xFFF8FAFC)
   ) { padding ->
-    Column(
-      modifier = Modifier
-        .fillMaxSize()
-        .padding(padding)
-    ) {
+    Column(modifier = Modifier.fillMaxSize().padding(padding)) {
       ScrollableTabRow(
         selectedTabIndex = selectedTab,
         containerColor = Color.White,
@@ -127,217 +173,127 @@ fun ReportsScreen(
         }
       }
 
-      when (selectedTab) {
-        0 -> ItemMovementsReport(items)
-        1 -> TrialBalanceReport(accounts)
-        2 -> IncomeStatementReport(totalSales, totalPurchases, grossProfit, totalPayments, netProfit)
-        3 -> BalanceSheetReport(accounts, totalSales, totalPurchases)
-        4 -> OtherReportsList(viewModel)
+      if (selectedTab < 4) {
+        ReportTableView(currentTable ?: ReportTable("", emptyList(), emptyList()))
+      } else if (otherReport == null) {
+        OtherReportsList(onSelect = { otherReport = it })
+      } else {
+        Row(
+          modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+          verticalAlignment = Alignment.CenterVertically,
+          horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+          Text(otherReport.orEmpty(), fontWeight = FontWeight.Bold, fontSize = 14.sp, color = MohasebPrimaryBlue)
+          TextButton(onClick = { otherReport = null }) { Text("كل التقارير") }
+        }
+        if (otherReport == "حركة الحسابات") {
+          var menuOpen by remember { mutableStateOf(false) }
+          Box(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+            OutlinedButton(onClick = { menuOpen = true }, modifier = Modifier.fillMaxWidth()) {
+              Text(if (statementAccount.isBlank()) "اختر الحساب" else statementAccount)
+            }
+            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+              accounts.forEach { acc ->
+                DropdownMenuItem(text = { Text(acc.name) }, onClick = { statementAccount = acc.name; menuOpen = false })
+              }
+            }
+          }
+        }
+        ReportTableView(currentTable ?: ReportTable("", emptyList(), emptyList()))
       }
     }
   }
 }
 
 @Composable
-fun ItemMovementsReport(items: List<com.example.data.model.ItemEntity>) {
+fun ReportTableView(table: ReportTable) {
+  val cols = table.headers.size.coerceAtLeast(1)
+  fun weightOf(i: Int): Float = if (i == 0) 2f else 1f
+
   Column(modifier = Modifier.fillMaxSize()) {
-    Surface(
-      modifier = Modifier
-        .fillMaxWidth()
-        .height(42.dp),
-      color = Color(0xFF0F172A)
-    ) {
+    Surface(modifier = Modifier.fillMaxWidth().height(42.dp), color = Color(0xFF0F172A)) {
       Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 12.dp),
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
       ) {
-        Text("الصنف", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2f))
-        Text("الافتتاحي", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-        Text("النقص المحسوب", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-        Text("المتاح", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+        table.headers.forEachIndexed { i, h ->
+          Text(
+            h, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold,
+            modifier = Modifier.weight(weightOf(i)),
+            textAlign = if (i == 0) TextAlign.Start else TextAlign.Center
+          )
+        }
+      }
+    }
+
+    if (table.rows.isEmpty()) {
+      Box(modifier = Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+        Text("لا توجد بيانات لعرضها", color = Color(0xFF64748B), fontSize = 14.sp)
       }
     }
 
     LazyColumn(modifier = Modifier.fillMaxSize()) {
-      items(items) { item ->
-        val incoming = item.openingQuantity
-        val outgoing = (incoming - item.currentStock).coerceAtLeast(0.0)
+      items(table.rows) { row ->
         Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp, horizontal = 12.dp),
+          modifier = Modifier.fillMaxWidth().padding(vertical = 11.dp, horizontal = 12.dp),
           verticalAlignment = Alignment.CenterVertically
         ) {
-          Text(item.name, fontSize = 13.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(2f))
-          Text("%.0f".format(incoming), fontSize = 13.sp, color = Color(0xFF2E7D32), modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-          Text("%.0f".format(outgoing), fontSize = 13.sp, color = Color(0xFFC62828), modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
-          Text("%.0f".format(item.currentStock), fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MohasebPrimaryBlue, modifier = Modifier.weight(1f), textAlign = TextAlign.Center)
+          for (i in 0 until cols) {
+            Text(
+              row.getOrElse(i) { "" },
+              fontSize = 12.5.sp,
+              fontWeight = if (i == 0) FontWeight.SemiBold else FontWeight.Normal,
+              modifier = Modifier.weight(weightOf(i)),
+              textAlign = if (i == 0) TextAlign.Start else TextAlign.Center
+            )
+          }
         }
         Divider(color = Color(0xFFE2E8F0))
       }
-    }
-  }
-}
-
-@Composable
-fun TrialBalanceReport(accounts: List<com.example.data.model.AccountEntity>) {
-  Column(modifier = Modifier.fillMaxSize()) {
-    Surface(
-      modifier = Modifier
-        .fillMaxWidth()
-        .height(42.dp),
-      color = Color(0xFF0F172A)
-    ) {
-      Row(
-        modifier = Modifier
-          .fillMaxWidth()
-          .padding(horizontal = 12.dp),
-        verticalAlignment = Alignment.CenterVertically
-      ) {
-        Text("الحساب", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(2f))
-        Text("مدين", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.3f), textAlign = TextAlign.Center)
-        Text("دائن", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1.3f), textAlign = TextAlign.Center)
-      }
-    }
-
-    LazyColumn(modifier = Modifier.fillMaxSize()) {
-      items(accounts) { acc ->
-        val debit = if (acc.balance >= 0) acc.balance else 0.0
-        val credit = if (acc.balance < 0) -acc.balance else 0.0
-        Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 12.dp, horizontal = 12.dp),
-          verticalAlignment = Alignment.CenterVertically
-        ) {
-          Text(acc.name, fontSize = 13.sp, fontWeight = FontWeight.Medium, modifier = Modifier.weight(2f))
-          Text("%,.0f".format(debit), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF2E7D32), modifier = Modifier.weight(1.3f), textAlign = TextAlign.Center)
-          Text("%,.0f".format(credit), fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFFC62828), modifier = Modifier.weight(1.3f), textAlign = TextAlign.Center)
+      table.totals?.let { totals ->
+        item {
+          Row(
+            modifier = Modifier.fillMaxWidth().background(Color(0xFFE8F5E9)).padding(vertical = 12.dp, horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+          ) {
+            for (i in 0 until cols) {
+              Text(
+                totals.getOrElse(i) { "" },
+                fontSize = 12.5.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(weightOf(i)),
+                textAlign = if (i == 0) TextAlign.Start else TextAlign.Center
+              )
+            }
+          }
         }
-        Divider(color = Color(0xFFE2E8F0))
       }
     }
   }
 }
 
 @Composable
-fun IncomeStatementReport(
-  totalSales: Double,
-  totalPurchases: Double,
-  grossProfit: Double,
-  totalExpenses: Double,
-  netProfit: Double
-) {
-  Column(
-    modifier = Modifier
-      .fillMaxSize()
-      .padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp)
-  ) {
-    ReportMetricCard("إجمالي المبيعات الإيرادية", totalSales, Color(0xFF1565C0))
-    ReportMetricCard("تكلفة المشتريات والبضاعة", totalPurchases, Color(0xFFC62828))
-    ReportMetricCard("فرق المبيعات والمشتريات", grossProfit, Color(0xFF00796B))
-    ReportMetricCard("المصروفات والسندات الصادرة", totalExpenses, Color(0xFFD84315))
-    ReportMetricCard("الفرق بعد سندات الصرف", netProfit, Color(0xFF2E7D32), isHighlight = true)
-  }
-}
-
-@Composable
-fun BalanceSheetReport(
-  accounts: List<com.example.data.model.AccountEntity>,
-  totalSales: Double,
-  totalPurchases: Double
-) {
-  val totalAssets = accounts.filter { it.balance > 0 }.sumOf { it.balance }
-  val totalLiabilities = accounts.filter { it.balance < 0 }.sumOf { -it.balance }
-  val workingCapital = totalAssets - totalLiabilities
-
-  Column(
-    modifier = Modifier
-      .fillMaxSize()
-      .padding(16.dp),
-    verticalArrangement = Arrangement.spacedBy(12.dp)
-  ) {
-    ReportMetricCard("إجمالي الأصول والأرصدة النقدية", totalAssets, Color(0xFF2E7D32))
-    ReportMetricCard("إجمالي الخصوم والالتزامات", totalLiabilities, Color(0xFFC62828))
-    ReportMetricCard("رأس المال العامل الصافي", workingCapital, MohasebPrimaryBlue, isHighlight = true)
-  }
-}
-
-@Composable
-fun OtherReportsList(viewModel: AccountingViewModel) {
-  val otherReports = listOf(
-    "المخزون المتبقي",
-    "أرصدة الحسابات",
-    "أرباح الأصناف",
-    "العمليات اليومية",
-    "القيود اليومية",
-    "حركة الصندوق",
-    "حركة الحسابات",
-    "إجمالي التصنيفات",
-    "فوارق أسعار العملات",
-    "رأس المال العامل",
-    "الربح على مستوى العميل",
-    "المبيعات حسب الصنف",
-    "المشتريات حسب الصنف",
-    "تفاصيل حركة الأصناف"
-  )
-
+fun OtherReportsList(onSelect: (String) -> Unit) {
   LazyColumn(
-    modifier = Modifier
-      .fillMaxSize()
-      .padding(12.dp),
+    modifier = Modifier.fillMaxSize().padding(12.dp),
     verticalArrangement = Arrangement.spacedBy(8.dp)
   ) {
-    items(otherReports) { r ->
+    items(ReportBuilders.otherReportNames) { r ->
       Card(
-        modifier = Modifier
-          .fillMaxWidth()
-          .clickable { viewModel.showMessage("عرض تقرير: $r") },
+        modifier = Modifier.fillMaxWidth().clickable { onSelect(r) },
         colors = CardDefaults.cardColors(containerColor = Color.White),
         shape = RoundedCornerShape(8.dp)
       ) {
         Row(
-          modifier = Modifier
-            .fillMaxWidth()
-            .padding(16.dp),
+          modifier = Modifier.fillMaxWidth().padding(16.dp),
           verticalAlignment = Alignment.CenterVertically,
           horizontalArrangement = Arrangement.SpaceBetween
         ) {
+          Text(r, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B), maxLines = 1,
+            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
           Icon(Icons.Default.PictureAsPdf, contentDescription = r, tint = Color(0xFF1565C0), modifier = Modifier.size(20.dp))
-          Text(r, fontSize = 13.5.sp, fontWeight = FontWeight.Bold, color = Color(0xFF1E293B), maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
         }
       }
-    }
-  }
-}
-
-@Composable
-fun ReportMetricCard(label: String, value: Double, accentColor: Color, isHighlight: Boolean = false) {
-  Card(
-    modifier = Modifier.fillMaxWidth(),
-    colors = CardDefaults.cardColors(
-      containerColor = if (isHighlight) Color(0xFFE8F5E9) else Color.White
-    ),
-    shape = RoundedCornerShape(10.dp)
-  ) {
-    Row(
-      modifier = Modifier
-        .fillMaxWidth()
-        .padding(horizontal = 14.dp, vertical = 14.dp),
-      verticalAlignment = Alignment.CenterVertically,
-      horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-      Text(label, fontSize = 13.sp, fontWeight = FontWeight.Medium, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
-      Text(
-        "%,.0f ر.ي".format(value),
-        fontSize = if (isHighlight) 15.sp else 13.5.sp,
-        fontWeight = FontWeight.Bold,
-        color = accentColor,
-        maxLines = 1
-      )
     }
   }
 }

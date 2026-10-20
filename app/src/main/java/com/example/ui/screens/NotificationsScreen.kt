@@ -1,7 +1,10 @@
 package com.example.ui.screens
 
+import android.content.Intent
+import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -18,10 +21,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Call
+import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Message
-import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -30,33 +32,32 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.ui.theme.MohasebPrimaryBlue
+import com.example.ui.util.SettingKeys
+import com.example.ui.util.boolSetting
 import com.example.ui.viewmodel.AccountingViewModel
-
-data class NotificationItem(
-  val id: Long,
-  val name: String,
-  val date: String,
-  val time: String,
-  val note: String
-)
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -64,14 +65,17 @@ fun NotificationsScreen(
   viewModel: AccountingViewModel,
   onBack: () -> Unit
 ) {
-  val notifications = remember {
-    mutableStateListOf(
-      NotificationItem(1, "مؤسسة الأمل - سداد قسط الفاتورة #1", "2026-10-20", "11:30", "تذكير بالاتصال بالمحاسب"),
-      NotificationItem(2, "توريد بضاعة ركب وفلاتر زيت", "2026-10-22", "14:00", "وصول شحنة المستودع الرئيسي")
-    )
-  }
-
+  val context = LocalContext.current
+  val reminders by viewModel.allReminders.collectAsState()
+  val accounts by viewModel.allAccounts.collectAsState()
+  val userMessage by viewModel.userMessage.collectAsState()
+  val snackbarHostState = remember { SnackbarHostState() }
   var showAddDialog by remember { mutableStateOf(false) }
+
+  // Overdue balances: every account that still carries a positive balance is a pending collection.
+  val appSettings by viewModel.allSettings.collectAsState()
+  val showBalances = appSettings.boolSetting(SettingKeys.NOTIFY_BALANCES, true)
+  val openBalances = if (showBalances) accounts.filter { it.parentCategory == "العملاء" && it.balance > 0.0 } else emptyList()
 
   Scaffold(
     topBar = {
@@ -97,6 +101,7 @@ fun NotificationsScreen(
         colors = TopAppBarDefaults.topAppBarColors(containerColor = MohasebPrimaryBlue)
       )
     },
+    snackbarHost = { SnackbarHost(snackbarHostState) },
     containerColor = Color(0xFFF8FAFC)
   ) { padding ->
     LazyColumn(
@@ -106,7 +111,15 @@ fun NotificationsScreen(
         .padding(12.dp),
       verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
-      items(notifications) { item ->
+      if (reminders.isEmpty() && openBalances.isEmpty()) {
+        item {
+          Box(modifier = Modifier.fillMaxWidth().padding(top = 48.dp), contentAlignment = Alignment.Center) {
+            Text("لا توجد تنبيهات حالياً", color = Color(0xFF64748B), fontSize = 14.sp)
+          }
+        }
+      }
+
+      items(reminders) { item ->
         Card(
           modifier = Modifier.fillMaxWidth(),
           shape = RoundedCornerShape(10.dp),
@@ -119,30 +132,61 @@ fun NotificationsScreen(
               verticalAlignment = Alignment.CenterVertically
             ) {
               Text(
-                text = item.name,
+                text = item.title,
                 fontSize = 13.5.sp,
                 fontWeight = FontWeight.Bold,
-                color = MohasebPrimaryBlue,
+                color = if (item.isDone) Color(0xFF94A3B8) else MohasebPrimaryBlue,
+                textDecoration = if (item.isDone) TextDecoration.LineThrough else TextDecoration.None,
                 modifier = Modifier.weight(1f),
                 maxLines = 1,
                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis
               )
               Row {
-                IconButton(onClick = { viewModel.showMessage("إجراء اتصال هاتفي للتنبيه") }, modifier = Modifier.size(28.dp)) {
+                IconButton(onClick = { viewModel.toggleReminderDone(item) }, modifier = Modifier.size(28.dp)) {
+                  Icon(
+                    Icons.Default.CheckCircle,
+                    contentDescription = "تم",
+                    tint = if (item.isDone) Color(0xFF2E7D32) else Color(0xFFCBD5E1),
+                    modifier = Modifier.size(18.dp)
+                  )
+                }
+                IconButton(
+                  onClick = {
+                    if (item.phone.isBlank()) {
+                      viewModel.showMessage("لا يوجد رقم هاتف مسجل لهذا التنبيه")
+                    } else {
+                      runCatching {
+                        context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + item.phone)))
+                      }.onFailure { viewModel.showMessage("تعذر فتح تطبيق الاتصال") }
+                    }
+                  },
+                  modifier = Modifier.size(28.dp)
+                ) {
                   Icon(Icons.Default.Call, contentDescription = "اتصال", tint = Color(0xFF00796B), modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = { viewModel.showMessage("إرسال رسالة تذكير") }, modifier = Modifier.size(28.dp)) {
+                IconButton(
+                  onClick = {
+                    if (item.phone.isBlank()) {
+                      viewModel.showMessage("لا يوجد رقم هاتف مسجل لهذا التنبيه")
+                    } else {
+                      runCatching {
+                        val sms = Intent(Intent.ACTION_SENDTO, Uri.parse("smsto:" + item.phone))
+                        sms.putExtra("sms_body", "تذكير: " + item.title)
+                        context.startActivity(sms)
+                      }.onFailure { viewModel.showMessage("تعذر فتح تطبيق الرسائل") }
+                    }
+                  },
+                  modifier = Modifier.size(28.dp)
+                ) {
                   Icon(Icons.Default.Message, contentDescription = "رسالة", tint = Color(0xFF1976D2), modifier = Modifier.size(18.dp))
                 }
-                IconButton(onClick = { notifications.remove(item) }, modifier = Modifier.size(28.dp)) {
+                IconButton(onClick = { viewModel.deleteReminder(item) }, modifier = Modifier.size(28.dp)) {
                   Icon(Icons.Default.Delete, contentDescription = "حذف", tint = Color.Red, modifier = Modifier.size(18.dp))
                 }
               }
             }
-
             Spacer(modifier = Modifier.height(4.dp))
             Text("${item.date}  ${item.time}", fontSize = 11.5.sp, color = Color(0xFF64748B))
-
             if (item.note.isNotBlank()) {
               Spacer(modifier = Modifier.height(4.dp))
               Text(item.note, fontSize = 12.5.sp, color = Color(0xFF334155), maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
@@ -150,14 +194,52 @@ fun NotificationsScreen(
           }
         }
       }
+
+      if (openBalances.isNotEmpty()) {
+        item {
+          Text("أرصدة عملاء مستحقة", fontSize = 13.sp, fontWeight = FontWeight.Bold, color = Color(0xFF475569), modifier = Modifier.padding(top = 6.dp))
+        }
+        items(openBalances) { acc ->
+          Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(10.dp),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF7ED))
+          ) {
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(14.dp),
+              horizontalArrangement = Arrangement.SpaceBetween,
+              verticalAlignment = Alignment.CenterVertically
+            ) {
+              Column(modifier = Modifier.weight(1f)) {
+                Text(acc.name, fontWeight = FontWeight.Bold, fontSize = 13.5.sp)
+                Text("المستحق: %,.0f".format(acc.balance), fontSize = 12.sp, color = Color(0xFFC62828))
+              }
+              IconButton(
+                onClick = {
+                  if (acc.phone.isBlank()) {
+                    viewModel.showMessage("لا يوجد رقم هاتف مسجل للعميل ${acc.name}")
+                  } else {
+                    runCatching {
+                      context.startActivity(Intent(Intent.ACTION_DIAL, Uri.parse("tel:" + acc.phone)))
+                    }.onFailure { viewModel.showMessage("تعذر فتح تطبيق الاتصال") }
+                  }
+                },
+                modifier = Modifier.size(32.dp)
+              ) {
+                Icon(Icons.Default.Call, contentDescription = "اتصال", tint = Color(0xFF00796B), modifier = Modifier.size(18.dp))
+              }
+            }
+          }
+        }
+      }
     }
   }
 
-  // Dialog: Add notification matching video 03:35
   if (showAddDialog) {
     var name by remember { mutableStateOf("") }
     var date by remember { mutableStateOf(viewModel.todayFormatted) }
     var time by remember { mutableStateOf("12:00") }
+    var phone by remember { mutableStateOf("") }
     var note by remember { mutableStateOf("") }
 
     AlertDialog(
@@ -172,16 +254,18 @@ fun NotificationsScreen(
             OutlinedTextField(value = time, onValueChange = { time = it }, label = { Text("الوقت") }, modifier = Modifier.weight(1f))
           }
           Spacer(modifier = Modifier.height(8.dp))
+          OutlinedTextField(value = phone, onValueChange = { phone = it }, label = { Text("رقم الهاتف (اختياري)") }, modifier = Modifier.fillMaxWidth())
+          Spacer(modifier = Modifier.height(8.dp))
           OutlinedTextField(value = note, onValueChange = { note = it }, label = { Text("ملاحظة") }, modifier = Modifier.fillMaxWidth())
         }
       },
       confirmButton = {
         TextButton(
           onClick = {
-            if (name.isNotBlank()) {
-              notifications.add(NotificationItem(System.currentTimeMillis(), name, date, time, note))
-              showAddDialog = false
-              viewModel.showMessage("تم حفظ التنبيه بنجاح")
+            if (name.isBlank()) {
+              viewModel.showMessage("اكتب موضوع التنبيه")
+            } else {
+              viewModel.addReminder(name, date, time, note, phone) { showAddDialog = false }
             }
           }
         ) {

@@ -11,10 +11,14 @@ import com.example.data.model.AppSettingEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
+import com.example.data.model.JournalEntryEntity
+import com.example.data.model.ReminderEntity
 import com.example.data.model.ItemEntity
 import com.example.data.model.VoucherEntity
 import com.example.data.model.WarehouseEntity
 import com.example.data.model.WarehouseOperationEntity
+import com.example.data.model.WarehouseOperationLineEntity
+import com.example.data.model.WarehouseStockEntity
 import kotlinx.coroutines.CoroutineScope
 
 @Database(
@@ -27,9 +31,13 @@ import kotlinx.coroutines.CoroutineScope
     VoucherEntity::class,
     CurrencyEntity::class,
     WarehouseOperationEntity::class,
-    AppSettingEntity::class
+    AppSettingEntity::class,
+    JournalEntryEntity::class,
+    ReminderEntity::class,
+    WarehouseStockEntity::class,
+    WarehouseOperationLineEntity::class
   ],
-  version = 2,
+  version = 4,
   exportSchema = false
 )
 abstract class MohasebDatabase : RoomDatabase() {
@@ -40,6 +48,34 @@ abstract class MohasebDatabase : RoomDatabase() {
       override fun migrate(db: SupportSQLiteDatabase) {
         db.execSQL(
           "CREATE TABLE IF NOT EXISTS app_settings (settingKey TEXT NOT NULL, settingValue TEXT NOT NULL, PRIMARY KEY(settingKey))"
+        )
+      }
+    }
+
+    private val MIGRATION_2_3 = object : Migration(2, 3) {
+      override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+          "CREATE TABLE IF NOT EXISTS journal_entries (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, entryNumber TEXT NOT NULL, entryType TEXT NOT NULL, debitAccount TEXT NOT NULL, creditAccount TEXT NOT NULL, amount REAL NOT NULL, currency TEXT NOT NULL, date TEXT NOT NULL, statement TEXT NOT NULL)"
+        )
+        db.execSQL(
+          "CREATE TABLE IF NOT EXISTS reminders (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, title TEXT NOT NULL, date TEXT NOT NULL, time TEXT NOT NULL, note TEXT NOT NULL, phone TEXT NOT NULL, isDone INTEGER NOT NULL)"
+        )
+      }
+    }
+
+    private val MIGRATION_3_4 = object : Migration(3, 4) {
+      override fun migrate(db: SupportSQLiteDatabase) {
+        db.execSQL(
+          "CREATE TABLE IF NOT EXISTS warehouse_stock (itemId INTEGER NOT NULL, warehouseName TEXT NOT NULL, quantity REAL NOT NULL, PRIMARY KEY(itemId, warehouseName))"
+        )
+        db.execSQL(
+          "CREATE TABLE IF NOT EXISTS warehouse_operation_lines (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, operationId INTEGER NOT NULL, itemId INTEGER NOT NULL, itemName TEXT NOT NULL, quantity REAL NOT NULL, sourceDelta REAL NOT NULL, targetDelta REAL NOT NULL, unitCost REAL NOT NULL)"
+        )
+        // Existing single-total stock is assigned to the first warehouse so nothing is lost.
+        db.execSQL(
+          "INSERT OR IGNORE INTO warehouse_stock (itemId, warehouseName, quantity) " +
+            "SELECT i.id, (SELECT name FROM warehouses ORDER BY id ASC LIMIT 1), i.currentStock FROM items i " +
+            "WHERE (SELECT COUNT(*) FROM warehouses) > 0"
         )
       }
     }
@@ -55,7 +91,7 @@ abstract class MohasebDatabase : RoomDatabase() {
           "mohaseb_soft_db"
         )
           // Preserve existing accounting data and migrate schema changes explicitly.
-          .addMigrations(MIGRATION_1_2)
+          .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
           .addCallback(object : RoomDatabase.Callback() {
             override fun onCreate(db: SupportSQLiteDatabase) {
               super.onCreate(db)
@@ -70,6 +106,14 @@ abstract class MohasebDatabase : RoomDatabase() {
           })
           .build()
           .also { INSTANCE = it }
+      }
+    }
+
+    /** Closes and forgets the singleton so the database file can be replaced (restore). */
+    fun closeInstance() {
+      synchronized(this) {
+        INSTANCE?.close()
+        INSTANCE = null
       }
     }
   }

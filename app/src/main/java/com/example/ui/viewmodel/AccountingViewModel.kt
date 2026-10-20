@@ -8,6 +8,11 @@ import com.example.data.model.AppSettingEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
+import com.example.data.model.JournalEntryEntity
+import com.example.data.model.ReminderEntity
+import com.example.data.model.WarehouseOperationLineEntity
+import com.example.data.model.WarehouseStockEntity
+import com.example.data.repository.OperationLineRequest
 import com.example.data.model.ItemEntity
 import com.example.data.model.VoucherEntity
 import com.example.data.model.WarehouseEntity
@@ -53,9 +58,16 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     }
   }
 
+  // PIN hash as it was when the app started (null until settings are first read); used for the lock screen.
+  private val _startupPinHash = MutableStateFlow<String?>(null)
+  val startupPinHash: StateFlow<String?> = _startupPinHash
+
   init {
     viewModelScope.launch {
       repository.allSettings.collect { settings ->
+        if (_startupPinHash.value == null) {
+          _startupPinHash.value = settings.firstOrNull { it.settingKey == "app_pin_hash" }?.settingValue.orEmpty()
+        }
         settings.firstOrNull { it.settingKey == "active_warehouse" }
           ?.settingValue?.takeIf { it.isNotBlank() }?.let { _activeWarehouse.value = it }
         settings.firstOrNull { it.settingKey == "active_currency" }
@@ -113,6 +125,36 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     initialValue = emptyList()
   )
 
+  val allInvoiceItems: StateFlow<List<InvoiceItemEntity>> = repository.allInvoiceItems.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
+  val allJournalEntries: StateFlow<List<JournalEntryEntity>> = repository.allJournalEntries.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
+  val allWarehouseStock: StateFlow<List<WarehouseStockEntity>> = repository.allWarehouseStock.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
+  val allOperationLines: StateFlow<List<WarehouseOperationLineEntity>> = repository.allOperationLines.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
+  val allReminders: StateFlow<List<ReminderEntity>> = repository.allReminders.stateIn(
+    scope = viewModelScope,
+    started = SharingStarted.WhileSubscribed(5000),
+    initialValue = emptyList()
+  )
+
   fun saveSettings(settings: Map<String, String>, onSuccess: () -> Unit = {}) {
     if (settings.keys.any { it.isBlank() }) {
       showMessage("تعذر حفظ إعداد غير صالح")
@@ -164,6 +206,9 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     get() = SimpleDateFormat("yyyy-MM-dd", Locale.ENGLISH).format(Date())
 
   // Invoice Items query
+  suspend fun loadInvoiceItems(invoiceId: Long): List<InvoiceItemEntity> =
+    repository.getInvoiceItemsSync(invoiceId)
+
   fun getInvoiceItems(invoiceId: Long): Flow<List<InvoiceItemEntity>> {
     return repository.getInvoiceItems(invoiceId)
   }
@@ -184,9 +229,10 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     otherFees: Double,
     paidAmount: Double,
     notes: String,
+    editing: InvoiceEntity? = null,
     onSuccess: () -> Unit
   ) {
-    if (type != "SALE" && type != "PURCHASE") {
+    if (type !in listOf("SALE", "PURCHASE", "QUOTE", "PURCHASE_ORDER")) {
       showMessage("نوع الفاتورة غير صحيح")
       return
     }
@@ -217,7 +263,7 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
       isCredit = isCredit,
       isReturn = isReturn,
       date = date.ifBlank { todayFormatted },
-      partyName = partyName.ifBlank { if (type == "SALE") "عميل نقدي" else "مورد عام" },
+      partyName = partyName.ifBlank { if (type == "SALE" || type == "QUOTE") "عميل نقدي" else "مورد عام" },
       warehouseName = warehouse,
       currency = currency,
       subtotal = subtotal,
@@ -230,10 +276,21 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     )
 
     viewModelScope.launch {
-      runCatching { repository.createInvoice(invoice, items) }
+      runCatching {
+        if (editing != null) repository.updateInvoice(editing, invoice, items)
+        else repository.createInvoice(invoice, items)
+      }
         .onSuccess {
-          val typeLabel = if (type == "SALE") "فاتورة بيع" else "فاتورة شراء"
-          showMessage("تم حفظ $typeLabel بنجاح وتحديث أرصدة المخزون")
+          if (editing != null) {
+            showMessage("تم تعديل الفاتورة وإعادة احتساب المخزون والأرصدة")
+          } else when (type) {
+            "QUOTE" -> showMessage("تم حفظ عرض السعر (لا يؤثر على المخزون أو الأرصدة)")
+            "PURCHASE_ORDER" -> showMessage("تم حفظ طلب الشراء (لا يؤثر على المخزون أو الأرصدة)")
+            else -> {
+              val typeLabel = if (type == "SALE") "فاتورة بيع" else "فاتورة شراء"
+              showMessage("تم حفظ $typeLabel بنجاح وتحديث أرصدة المخزون")
+            }
+          }
           onSuccess()
         }
         .onFailure { error ->
@@ -454,6 +511,35 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     Unit
   }
 
+  fun addStockOperation(
+    opType: String,
+    warehouse: String,
+    toWarehouse: String,
+    party: String,
+    notes: String,
+    lines: List<OperationLineRequest>,
+    onSuccess: () -> Unit
+  ) = performDbAction("تم تسجيل عملية $opType وتحديث كميات المخزن", onSuccess) {
+    repository.createStockOperation(
+      WarehouseOperationEntity(
+        operationNumber = (System.currentTimeMillis() % 100000).toString(),
+        operationType = opType,
+        warehouseName = warehouse,
+        targetWarehouseName = if (opType.contains("تحويل")) toWarehouse else "",
+        date = todayFormatted,
+        partyOrAccount = party,
+        totalItems = lines.size,
+        totalCost = 0.0,
+        notes = notes
+      ),
+      lines
+    )
+    Unit
+  }
+
+  suspend fun loadOperationLines(operationId: Long): List<WarehouseOperationLineEntity> =
+    repository.getOperationLines(operationId)
+
   fun updateWarehouseOperation(op: WarehouseOperationEntity, onSuccess: () -> Unit = {}) =
     performDbAction("تم تحديث العملية المخزنية #${op.operationNumber}", onSuccess) {
       repository.updateOperation(op)
@@ -463,6 +549,56 @@ class AccountingViewModel(private val repository: AccountingRepository) : ViewMo
     performDbAction("تم حذف العملية المخزنية #${op.operationNumber}", onSuccess) {
       repository.deleteOperation(op)
     }
+
+  // Journal entries
+  fun addJournalEntry(
+    entryType: String,
+    debitAccount: String,
+    creditAccount: String,
+    amount: Double,
+    currency: String,
+    statement: String,
+    onSuccess: () -> Unit
+  ) {
+    val entry = JournalEntryEntity(
+      entryNumber = (System.currentTimeMillis() % 100000).toString(),
+      entryType = entryType,
+      debitAccount = debitAccount,
+      creditAccount = creditAccount,
+      amount = amount,
+      currency = currency,
+      date = todayFormatted,
+      statement = statement
+    )
+    performDbAction("تم حفظ القيد وتحديث أرصدة الحسابين", onSuccess) {
+      repository.insertJournalEntry(entry)
+      Unit
+    }
+  }
+
+  fun deleteJournalEntry(entry: JournalEntryEntity, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حذف القيد رقم ${entry.entryNumber} وعكس أثره على الحسابات", onSuccess) {
+      repository.deleteJournalEntry(entry)
+    }
+
+  // Reminders
+  fun addReminder(title: String, date: String, time: String, note: String, phone: String, onSuccess: () -> Unit = {}) =
+    performDbAction("تم حفظ التنبيه بنجاح", onSuccess) {
+      repository.insertReminder(
+        ReminderEntity(title = title.trim(), date = date, time = time, note = note, phone = phone.trim())
+      )
+      Unit
+    }
+
+  fun toggleReminderDone(reminder: ReminderEntity) {
+    viewModelScope.launch {
+      runCatching { repository.updateReminder(reminder.copy(isDone = !reminder.isDone)) }
+        .onFailure { showMessage(it.message ?: "تعذر تحديث التنبيه") }
+    }
+  }
+
+  fun deleteReminder(reminder: ReminderEntity) =
+    performDbAction("تم حذف التنبيه", {}) { repository.deleteReminder(reminder) }
 }
 
 class AccountingViewModelFactory(private val repository: AccountingRepository) : ViewModelProvider.Factory {

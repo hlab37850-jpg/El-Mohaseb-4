@@ -1,5 +1,10 @@
 package com.example.ui.screens
 
+import com.example.ui.util.rememberExportActions
+import com.example.ui.util.DEFAULT_UNITS
+import com.example.ui.util.DEFAULT_CATEGORIES
+import com.example.ui.util.SettingKeys
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -63,10 +68,15 @@ data class SettingItem(val title: String, val icon: ImageVector)
 @Composable
 fun SettingsScreen(
   viewModel: AccountingViewModel,
-  onBack: () -> Unit
+  onBack: () -> Unit,
+  onBackupRequested: () -> Unit = {},
+  onRestoreRequested: () -> Unit = {}
 ) {
   var showCompanyProfileDialog by remember { mutableStateOf(false) }
   var showPrinterDialog by remember { mutableStateOf(false) }
+  var activeDialog by remember { mutableStateOf<String?>(null) }
+  val exports = rememberExportActions(viewModel)
+  val allItemsForBarcodes by viewModel.allItems.collectAsState()
   val savedSettings by viewModel.allSettings.collectAsState()
   val settingsMap = savedSettings.associate { it.settingKey to it.settingValue }
 
@@ -114,7 +124,8 @@ fun SettingsScreen(
               when (item.title) {
                 "البيانات الشخصية والشركة" -> showCompanyProfileDialog = true
                 "الطابعة الحرارية (80mm / Bluetooth)" -> showPrinterDialog = true
-                else -> viewModel.showMessage("هذه الوظيفة غير مربوطة بقاعدة البيانات بعد: ${item.title}")
+                "طباعة باركود الأصناف" -> exports.barcodes(allItemsForBarcodes)
+                else -> activeDialog = item.title
               }
             }
             .padding(horizontal = 16.dp, vertical = 14.dp),
@@ -176,56 +187,56 @@ fun SettingsScreen(
     )
   }
 
-  // Dialog: Printer Configuration (video 03:21)
   if (showPrinterDialog) {
-    var thermalEnabled by remember(showPrinterDialog, settingsMap) {
-      mutableStateOf(settingsMap["printer_thermal_enabled"]?.toBooleanStrictOrNull() ?: false)
-    }
-    var autoCut by remember(showPrinterDialog, settingsMap) {
-      mutableStateOf(settingsMap["printer_auto_cut"]?.toBooleanStrictOrNull() ?: false)
-    }
+    ThermalPrinterDialog(settings = savedSettings, viewModel = viewModel, onDismiss = { showPrinterDialog = false })
+  }
 
-    AlertDialog(
-      onDismissRequest = { showPrinterDialog = false },
-      title = { Text("إعدادات الطابعة الحرارية", fontWeight = FontWeight.Bold, color = MohasebPrimaryBlue) },
-      text = {
-        Column {
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Text("تفعيل الطابعة الحرارية عبر البلوتوث", fontSize = 14.sp)
-            Switch(checked = thermalEnabled, onCheckedChange = { thermalEnabled = it })
-          }
-          Spacer(modifier = Modifier.height(8.dp))
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-          ) {
-            Text("القطع التلقائي للورق بعد كل فاتورة", fontSize = 14.sp)
-            Switch(checked = autoCut, onCheckedChange = { autoCut = it })
-          }
-        }
-      },
-      confirmButton = {
-        TextButton(onClick = {
-          viewModel.saveSettings(
-            mapOf(
-              "printer_thermal_enabled" to thermalEnabled.toString(),
-              "printer_auto_cut" to autoCut.toString()
-            )
-          ) { showPrinterDialog = false }
-        }) {
-          Text("موافق", fontWeight = FontWeight.Bold)
-        }
-      },
-      dismissButton = {
-        TextButton(onClick = { showPrinterDialog = false }) {
-          Text("إلغاء")
-        }
-      }
+  val closeDialog = { activeDialog = null }
+  when (activeDialog) {
+    "خيارات الطباعة" -> SimpleTextSettingDialog(
+      title = "خيارات الطباعة",
+      label = "سطر الترويسة (يظهر أعلى كل تقرير وفاتورة مطبوعة)",
+      key = SettingKeys.PRINT_HEADER,
+      settings = savedSettings,
+      viewModel = viewModel,
+      onDismiss = closeDialog
     )
+    "خيارات الأمان وكلمات المرور" -> SecurityDialog(savedSettings, viewModel, closeDialog)
+    "المستخدمين والصلاحيات" -> InfoDialog(
+      "المستخدمين والصلاحيات",
+      "التطبيق يعمل حاليًا بحساب واحد. لحماية البيانات فعّل الرمز السري من «خيارات الأمان وكلمات المرور». تعدد المستخدمين بصلاحيات منفصلة غير مفعّل في هذا الإصدار.",
+      closeDialog
+    )
+    "التصنيفات" -> ListEditorDialog("التصنيفات", SettingKeys.CATEGORIES, DEFAULT_CATEGORIES, savedSettings, viewModel, closeDialog)
+    "مجموعة الصنف" -> ListEditorDialog("مجموعات الأصناف", SettingKeys.GROUPS, emptyList(), savedSettings, viewModel, closeDialog)
+    "وحدات القياس" -> ListEditorDialog("وحدات القياس", SettingKeys.UNITS, DEFAULT_UNITS, savedSettings, viewModel, closeDialog)
+    "خيارات حفظ البيانات والنسخ الاحتياطي" -> BackupDialog(onBackupRequested, onRestoreRequested, closeDialog)
+    "الضريبة المضافة" -> SimpleTextSettingDialog(
+      title = "الضريبة المضافة",
+      label = "نسبة الضريبة الافتراضية % (0 = بدون)",
+      key = SettingKeys.DEFAULT_TAX,
+      settings = savedSettings,
+      viewModel = viewModel,
+      keyboardType = KeyboardType.Decimal,
+      validate = { v ->
+        val n = if (v.isBlank()) 0.0 else v.replace(',', '.').toDoubleOrNull()
+        if (n == null || n < 0.0 || n > 100.0) "أدخل نسبة بين 0 و 100" else null
+      },
+      onDismiss = closeDialog
+    )
+    "خيارات الإشعارات" -> ToggleSettingDialog(
+      "خيارات الإشعارات", "عرض أرصدة العملاء المستحقة ضمن التنبيهات",
+      SettingKeys.NOTIFY_BALANCES, true, savedSettings, viewModel, closeDialog
+    )
+    "خيارات أخرى ونقاط البيع" -> ToggleSettingDialog(
+      "نقاط البيع", "جعل فاتورة البيع الجديدة نقدية افتراضيًا",
+      SettingKeys.POS_DEFAULT_CASH, false, savedSettings, viewModel, closeDialog
+    )
+    "تفعيل الإشتراك" -> InfoDialog(
+      "الاشتراك",
+      "هذه النسخة تعمل بالكامل دون اشتراك أو تفعيل، وجميع بياناتك محفوظة على جهازك.",
+      closeDialog
+    )
+    else -> Unit
   }
 }

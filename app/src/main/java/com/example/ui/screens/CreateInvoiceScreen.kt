@@ -69,7 +69,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
+import com.example.ui.util.ListTables
+import com.example.ui.util.SettingKeys
+import com.example.ui.util.boolSetting
+import com.example.ui.util.stringSetting
+import com.example.ui.util.ReportTable
+import com.example.ui.util.rememberExportActions
 import com.example.data.model.ItemEntity
 import com.example.ui.theme.MohasebBorder
 import com.example.ui.theme.MohasebPrimaryBlue
@@ -78,10 +85,14 @@ import com.example.ui.viewmodel.AccountingViewModel
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CreateInvoiceScreen(
-  invoiceType: String, // "SALE" or "PURCHASE"
+  invoiceType: String, // "SALE", "PURCHASE", "QUOTE" or "PURCHASE_ORDER"
   viewModel: AccountingViewModel,
-  onBack: () -> Unit
+  onBack: () -> Unit,
+  editInvoiceId: Long? = null
 ) {
+  val exports = rememberExportActions(viewModel)
+  val allInvoicesForEdit by viewModel.allInvoices.collectAsState()
+  val editingInvoice = editInvoiceId?.let { id -> allInvoicesForEdit.firstOrNull { it.id == id } }
   val availableWarehouses by viewModel.allWarehouses.collectAsState()
   val availableCurrencies by viewModel.allCurrencies.collectAsState()
   val availableAccounts by viewModel.allAccounts.collectAsState()
@@ -95,6 +106,7 @@ fun CreateInvoiceScreen(
   var currency by remember { mutableStateOf(activeCurrency) }
 
   LaunchedEffect(availableWarehouses, activeWarehouse) {
+    if (editInvoiceId != null) return@LaunchedEffect
     warehouseName = when {
       availableWarehouses.any { it.name == activeWarehouse } -> activeWarehouse
       availableWarehouses.isNotEmpty() && availableWarehouses.none { it.name == warehouseName } ->
@@ -103,6 +115,7 @@ fun CreateInvoiceScreen(
     }
   }
   LaunchedEffect(availableCurrencies, activeCurrency) {
+    if (editInvoiceId != null) return@LaunchedEffect
     currency = when {
       availableCurrencies.any { it.name == activeCurrency } -> activeCurrency
       availableCurrencies.isNotEmpty() && availableCurrencies.none { it.name == currency } ->
@@ -124,6 +137,42 @@ fun CreateInvoiceScreen(
   // Line Items
   val lineItems = remember { mutableStateListOf<InvoiceItemEntity>() }
 
+  // Defaults from settings for brand-new invoices only.
+  val appSettings by viewModel.allSettings.collectAsState()
+  val defaultTax = appSettings.stringSetting(SettingKeys.DEFAULT_TAX).replace(',', '.').toDoubleOrNull() ?: 0.0
+  val posCash = appSettings.boolSetting(SettingKeys.POS_DEFAULT_CASH, false)
+  LaunchedEffect(defaultTax, posCash) {
+    if (editInvoiceId == null) {
+      if (lineItems.isEmpty()) taxPercent = defaultTax
+      if (invoiceType == "SALE" && posCash) isCredit = false
+    }
+  }
+
+  // Edit mode: load the saved invoice and its lines once.
+  var editLoaded by remember { mutableStateOf(false) }
+  LaunchedEffect(editingInvoice) {
+    val inv = editingInvoice
+    if (inv != null && !editLoaded) {
+      val savedLines = viewModel.loadInvoiceItems(inv.id)
+      isCredit = inv.isCredit
+      isReturn = inv.isReturn
+      warehouseName = inv.warehouseName
+      currency = inv.currency
+      partyName = inv.partyName
+      invoiceDate = inv.date
+      invoiceNumber = inv.invoiceNumber
+      notes = inv.notes
+      discount = inv.discount
+      otherFees = inv.otherFees
+      paidAmount = inv.paidAmount
+      val taxable = inv.subtotal - inv.discount
+      taxPercent = if (taxable > 0.0) inv.tax / taxable * 100.0 else 0.0
+      lineItems.clear()
+      lineItems.addAll(savedLines)
+      editLoaded = true
+    }
+  }
+
   // Pickers and Modals
   var showAddItemDialog by remember { mutableStateOf(false) }
   var showSaveConfirmDialog by remember { mutableStateOf(false) }
@@ -138,10 +187,36 @@ fun CreateInvoiceScreen(
   val netTotal = (subtotal - discount + taxAmount + otherFees).coerceAtLeast(0.0)
   val remainingBalance = (netTotal - paidAmount).coerceAtLeast(0.0)
 
-  val screenTitle = buildString {
-    if (isReturn) append("مرتجع ")
-    append(if (invoiceType == "SALE") "بيع " else "شراء ")
-    append(if (isCredit) "آجل" else "نقدي")
+  fun currentInvoiceTable(): ReportTable {
+    val draft = InvoiceEntity(
+      invoiceNumber = invoiceNumber,
+      type = invoiceType,
+      isCredit = isCredit,
+      isReturn = isReturn,
+      date = invoiceDate,
+      partyName = partyName.ifBlank { if (isSaleSide) "عميل عام" else "مورد عام" },
+      warehouseName = warehouseName,
+      currency = currency,
+      subtotal = subtotal,
+      discount = discount,
+      tax = taxAmount,
+      otherFees = otherFees,
+      paidAmount = paidAmount,
+      remainingAmount = remainingBalance,
+      notes = notes
+    )
+    return ListTables.invoiceDocument(draft, lineItems.toList())
+  }
+
+  val isSaleSide = invoiceType == "SALE" || invoiceType == "QUOTE"
+  val screenTitle = when (invoiceType) {
+    "QUOTE" -> "فاتورة عرض سعر"
+    "PURCHASE_ORDER" -> "طلب شراء"
+    else -> buildString {
+      if (isReturn) append("مرتجع ")
+      append(if (isSaleSide) "بيع " else "شراء ")
+      append(if (isCredit) "آجل" else "نقدي")
+    }
   }
 
   Scaffold(
@@ -167,14 +242,14 @@ fun CreateInvoiceScreen(
           }
         },
         actions = {
-          IconButton(onClick = { viewModel.showMessage("تجهيز طباعة حرارية للفاتورة...") }) {
+          IconButton(onClick = { exports.print(currentInvoiceTable()) }) {
             Icon(
               imageVector = Icons.Default.Print,
               contentDescription = "طباعة حرارية",
               tint = Color.White
             )
           }
-          IconButton(onClick = { viewModel.showMessage("تصدير الفاتورة كـ PDF...") }) {
+          IconButton(onClick = { exports.pdf(currentInvoiceTable()) }) {
             Box(
               modifier = Modifier
                 .size(28.dp)
@@ -360,7 +435,7 @@ fun CreateInvoiceScreen(
           OutlinedTextField(
             value = partyName,
             onValueChange = { partyName = it },
-            label = { Text(if (invoiceType == "SALE") "العميل *" else "المورد *") },
+            label = { Text(if (isSaleSide) "العميل *" else "المورد *") },
             trailingIcon = {
               IconButton(onClick = { showPartyPicker = true }) {
                 Icon(Icons.Default.Person, contentDescription = "اختيار من الحسابات", tint = MohasebPrimaryBlue)
@@ -377,7 +452,7 @@ fun CreateInvoiceScreen(
             onDismissRequest = { showPartyPicker = false }
           ) {
             val relevantAccounts = availableAccounts.filter {
-              if (invoiceType == "SALE") it.parentCategory in listOf("العملاء", "عام")
+              if (isSaleSide) it.parentCategory in listOf("العملاء", "عام")
               else it.parentCategory in listOf("الموردون", "عام")
             }
             if (relevantAccounts.isEmpty()) {
@@ -545,7 +620,7 @@ fun CreateInvoiceScreen(
     var priceText by remember {
       mutableStateOf(
         selectedItem?.let {
-          if (invoiceType == "SALE") it.sellingPrice.toString() else it.costPrice.toString()
+          if (isSaleSide) it.sellingPrice.toString() else it.costPrice.toString()
         } ?: "500.0"
       )
     }
@@ -621,7 +696,7 @@ fun CreateInvoiceScreen(
                     onClick = {
                       selectedItem = itm
                       itemSearchText = itm.name
-                      priceText = if (invoiceType == "SALE") itm.sellingPrice.toString() else itm.costPrice.toString()
+                      priceText = if (isSaleSide) itm.sellingPrice.toString() else itm.costPrice.toString()
                       showItemSuggestions = false
                     }
                   )
@@ -782,7 +857,7 @@ fun CreateInvoiceScreen(
               invoiceNumber = invoiceNumber,
               isCredit = isCredit,
               isReturn = isReturn,
-              partyName = partyName.ifBlank { if (invoiceType == "SALE") "عميل عام" else "مورد عام" },
+              partyName = partyName.ifBlank { if (isSaleSide) "عميل عام" else "مورد عام" },
               date = invoiceDate,
               warehouse = warehouseName,
               currency = currency,
@@ -792,6 +867,7 @@ fun CreateInvoiceScreen(
               otherFees = otherFees,
               paidAmount = paidAmount,
               notes = notes,
+              editing = editingInvoice,
               onSuccess = onBack
             )
           },

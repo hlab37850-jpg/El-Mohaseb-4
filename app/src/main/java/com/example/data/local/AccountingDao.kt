@@ -11,10 +11,14 @@ import com.example.data.model.AppSettingEntity
 import com.example.data.model.CurrencyEntity
 import com.example.data.model.InvoiceEntity
 import com.example.data.model.InvoiceItemEntity
+import com.example.data.model.JournalEntryEntity
+import com.example.data.model.ReminderEntity
 import com.example.data.model.ItemEntity
 import com.example.data.model.VoucherEntity
 import com.example.data.model.WarehouseEntity
 import com.example.data.model.WarehouseOperationEntity
+import com.example.data.model.WarehouseOperationLineEntity
+import com.example.data.model.WarehouseStockEntity
 import kotlinx.coroutines.flow.Flow
 
 @Dao
@@ -239,4 +243,77 @@ interface AccountingDao {
 
   @Delete
   suspend fun deleteWarehouseOperation(op: WarehouseOperationEntity)
+
+  @Query("SELECT * FROM invoice_items")
+  fun getAllInvoiceItems(): Flow<List<InvoiceItemEntity>>
+
+  // Journal entries
+  @Query("SELECT * FROM journal_entries ORDER BY id DESC")
+  fun getAllJournalEntries(): Flow<List<JournalEntryEntity>>
+
+  @Query("SELECT * FROM journal_entries WHERE id = :id LIMIT 1")
+  suspend fun getJournalEntryById(id: Long): JournalEntryEntity?
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertJournalEntry(entry: JournalEntryEntity): Long
+
+  @Delete
+  suspend fun deleteJournalEntry(entry: JournalEntryEntity)
+
+  // Reminders
+  @Query("SELECT * FROM reminders ORDER BY date ASC, time ASC")
+  fun getAllReminders(): Flow<List<ReminderEntity>>
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertReminder(reminder: ReminderEntity): Long
+
+  @Update
+  suspend fun updateReminder(reminder: ReminderEntity)
+
+  @Delete
+  suspend fun deleteReminder(reminder: ReminderEntity)
+
+  // Per-warehouse stock
+  @Query("SELECT * FROM warehouse_stock")
+  fun getAllWarehouseStock(): Flow<List<WarehouseStockEntity>>
+
+  @Query("SELECT quantity FROM warehouse_stock WHERE itemId = :itemId AND warehouseName = :wh LIMIT 1")
+  suspend fun getWarehouseQty(itemId: Long, wh: String): Double?
+
+  @Query("SELECT COUNT(*) FROM warehouse_stock WHERE itemId = :itemId")
+  suspend fun countStockRows(itemId: Long): Int
+
+  @Insert(onConflict = OnConflictStrategy.IGNORE)
+  suspend fun insertStockRowIgnore(row: WarehouseStockEntity): Long
+
+  @Query("UPDATE warehouse_stock SET quantity = quantity + :delta WHERE itemId = :itemId AND warehouseName = :wh")
+  suspend fun addStockDelta(itemId: Long, wh: String, delta: Double)
+
+  @Query("UPDATE warehouse_stock SET warehouseName = :newName WHERE warehouseName = :oldName")
+  suspend fun renameStockWarehouse(oldName: String, newName: String)
+
+  @Query("SELECT COUNT(*) FROM warehouse_stock WHERE warehouseName = :name AND ABS(quantity) > 0.0001")
+  suspend fun countNonZeroStock(name: String): Int
+
+  @Query("DELETE FROM warehouse_stock WHERE warehouseName = :name")
+  suspend fun deleteStockForWarehouse(name: String)
+
+  @Query("DELETE FROM warehouse_stock WHERE itemId = :itemId")
+  suspend fun deleteStockForItem(itemId: Long)
+
+  // Warehouse operation lines
+  @Query("SELECT * FROM warehouse_operation_lines WHERE operationId = :opId")
+  suspend fun getOperationLines(opId: Long): List<WarehouseOperationLineEntity>
+
+  @Query("SELECT * FROM warehouse_operation_lines")
+  fun getAllOperationLines(): Flow<List<WarehouseOperationLineEntity>>
+
+  @Insert(onConflict = OnConflictStrategy.REPLACE)
+  suspend fun insertOperationLines(lines: List<WarehouseOperationLineEntity>)
+
+  @Query("DELETE FROM warehouse_operation_lines WHERE operationId = :opId")
+  suspend fun deleteOperationLines(opId: Long)
+
+  @Query("SELECT * FROM warehouse_operations WHERE id = :id LIMIT 1")
+  suspend fun getOperationById(id: Long): WarehouseOperationEntity?
 }

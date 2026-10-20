@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.ui.util.ListTables
+import com.example.ui.util.rememberExportActions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -68,10 +70,17 @@ fun InvoicesListScreen(
   invoiceType: String, // "SALE" or "PURCHASE"
   viewModel: AccountingViewModel,
   onBack: () -> Unit,
-  onAddNew: () -> Unit
+  onAddNew: () -> Unit,
+  onEdit: (Long) -> Unit = {}
 ) {
-  val title = if (invoiceType == "SALE") "قائمة المبيعات" else "قائمة المشتريات"
+  val title = when (invoiceType) {
+    "SALE" -> "قائمة المبيعات"
+    "QUOTE" -> "عروض الأسعار"
+    "PURCHASE_ORDER" -> "طلبات الشراء"
+    else -> "قائمة المشتريات"
+  }
   val invoices by viewModel.allInvoices.collectAsState()
+  val exports = rememberExportActions(viewModel)
   val filteredInvoices = invoices.filter { it.type == invoiceType }
 
   var showMenu by remember { mutableStateOf(false) }
@@ -118,7 +127,7 @@ fun InvoicesListScreen(
             )
           }
 
-          IconButton(onClick = { viewModel.showMessage("تصدير كشف الفواتير بصيغة PDF") }) {
+          IconButton(onClick = { exports.pdf(ListTables.invoices(displayedInvoices, title)) }) {
             Box(
               modifier = Modifier
                 .size(30.dp)
@@ -454,13 +463,23 @@ fun InvoicesListScreen(
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
           Button(
             onClick = {
-              viewModel.showMessage("جاري إرسال الفاتورة #${inv.invoiceNumber} للطباعة الحرارية...")
+              exports.print(ListTables.invoiceDocument(inv, lineItems))
             },
             colors = ButtonDefaults.buttonColors(containerColor = MohasebPrimaryBlue)
           ) {
             Icon(Icons.Default.Print, contentDescription = "طباعة", modifier = Modifier.size(16.dp))
             Spacer(modifier = Modifier.width(4.dp))
             Text("طباعة")
+          }
+
+          Button(
+            onClick = {
+              selectedInvoiceForDetails = null
+              onEdit(inv.id)
+            },
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00796B))
+          ) {
+            Text("تعديل")
           }
 
           Button(

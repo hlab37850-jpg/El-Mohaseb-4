@@ -1,6 +1,8 @@
 package com.example
 
+import android.content.Intent
 import android.os.Bundle
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -10,6 +12,13 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import com.example.ui.util.PinLockScreen
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.SnackbarHostState
+import androidx.compose.material3.SnackbarHost
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
@@ -22,6 +31,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
+import com.example.data.local.BackupManager
 import com.example.data.local.MohasebDatabase
 import com.example.data.repository.AccountingRepository
 import com.example.ui.screens.AccountsScreen
@@ -30,6 +41,7 @@ import com.example.ui.screens.CurrenciesScreen
 import com.example.ui.screens.DashboardScreen
 import com.example.ui.screens.InvoicesListScreen
 import com.example.ui.screens.ItemsScreen
+import com.example.ui.screens.JournalScreen
 import com.example.ui.screens.NotificationsScreen
 import com.example.ui.screens.ReportsScreen
 import com.example.ui.screens.SettingsScreen
@@ -43,7 +55,7 @@ sealed class NavDestination {
   object Dashboard : NavDestination()
   object SalesList : NavDestination()
   object PurchasesList : NavDestination()
-  data class CreateInvoice(val type: String) : NavDestination()
+  data class CreateInvoice(val type: String, val editId: Long? = null) : NavDestination()
   object VouchersList : NavDestination()
   object AccountsList : NavDestination()
   object ItemsList : NavDestination()
@@ -52,17 +64,56 @@ sealed class NavDestination {
   data class Reports(val report: String) : NavDestination()
   object Settings : NavDestination()
   object Notifications : NavDestination()
+  data class Journal(val type: String) : NavDestination()
+  data class DocumentList(val type: String) : NavDestination()
 }
 
 class MainActivity : ComponentActivity() {
   private lateinit var viewModel: AccountingViewModel
+  private lateinit var database: MohasebDatabase
+
+  private val backupLauncher =
+    registerForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
+      if (uri != null) {
+        lifecycleScope.launch {
+          runCatching { BackupManager.backupTo(applicationContext, database, uri) }
+            .onSuccess { viewModel.showMessage("تم حفظ النسخة الاحتياطية بنجاح") }
+            .onFailure { viewModel.showMessage(it.message ?: "تعذر حفظ النسخة الاحتياطية") }
+        }
+      }
+    }
+
+  private val restoreLauncher =
+    registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+      if (uri != null) {
+        lifecycleScope.launch {
+          runCatching { BackupManager.restoreFrom(applicationContext, uri) }
+            .onSuccess { restartApp() }
+            .onFailure { viewModel.showMessage(it.message ?: "تعذر استرجاع النسخة الاحتياطية") }
+        }
+      }
+    }
+
+  private fun restartApp() {
+    val launchIntent = packageManager.getLaunchIntentForPackage(packageName)
+    finishAffinity()
+    if (launchIntent?.component != null) {
+      startActivity(Intent.makeRestartActivityTask(launchIntent.component))
+    }
+    android.os.Process.killProcess(android.os.Process.myPid())
+  }
+
+  private fun startBackup() {
+    val stamp = java.text.SimpleDateFormat("yyyy-MM-dd_HHmm", java.util.Locale.ENGLISH).format(java.util.Date())
+    backupLauncher.launch("mohaseb_backup_$stamp.db")
+  }
 
   override fun onCreate(savedInstanceState: Bundle?) {
     super.onCreate(savedInstanceState)
     enableEdgeToEdge()
 
     // Initialize Room DB & Repository
-    val database = MohasebDatabase.getDatabase(applicationContext, lifecycleScope)
+    database = MohasebDatabase.getDatabase(applicationContext, lifecycleScope)
     val repository = AccountingRepository(database.accountingDao(), database)
     val factory = AccountingViewModelFactory(repository)
     viewModel = ViewModelProvider(this, factory)[AccountingViewModel::class.java]
@@ -71,7 +122,12 @@ class MainActivity : ComponentActivity() {
       MohasebSoftTheme {
         // Enforce RTL layout direction for natural Arabic experience
         CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Rtl) {
-          MohasebAppNavigation(viewModel = viewModel)
+          MohasebAppNavigation(
+            viewModel = viewModel,
+            onBackupRequested = { startBackup() },
+            onRestoreRequested = { restoreLauncher.launch(arrayOf("*/*")) },
+            onExitRequested = { finishAffinity() }
+          )
         }
       }
     }
@@ -79,8 +135,39 @@ class MainActivity : ComponentActivity() {
 }
 
 @Composable
-fun MohasebAppNavigation(viewModel: AccountingViewModel) {
+fun MohasebAppNavigation(
+  viewModel: AccountingViewModel,
+  onBackupRequested: () -> Unit = {},
+  onRestoreRequested: () -> Unit = {},
+  onExitRequested: () -> Unit = {}
+) {
+  val startupPin by viewModel.startupPinHash.collectAsState()
+  var unlocked by remember { mutableStateOf(false) }
+  val pin = startupPin
+  when {
+    pin == null -> Box(modifier = Modifier.fillMaxSize().background(Color(0xFFF4F7FB)))
+    pin.isNotBlank() && !unlocked -> PinLockScreen(expectedHash = pin, onUnlocked = { unlocked = true })
+    else -> MohasebAppContent(viewModel, onBackupRequested, onRestoreRequested, onExitRequested)
+  }
+}
+
+@Composable
+fun MohasebAppContent(
+  viewModel: AccountingViewModel,
+  onBackupRequested: () -> Unit = {},
+  onRestoreRequested: () -> Unit = {},
+  onExitRequested: () -> Unit = {}
+) {
   val backStack = remember { mutableStateListOf<NavDestination>(NavDestination.Dashboard) }
+  val globalSnackbar = remember { SnackbarHostState() }
+  val globalMessage by viewModel.userMessage.collectAsState()
+  // Every screen reports success / errors through the ViewModel; show them in one place.
+  LaunchedEffect(globalMessage) {
+    globalMessage?.let {
+      globalSnackbar.showSnackbar(it)
+      viewModel.clearMessage()
+    }
+  }
   val currentScreen = backStack.lastOrNull() ?: NavDestination.Dashboard
 
   // Proper back navigation
@@ -119,7 +206,11 @@ fun MohasebAppNavigation(viewModel: AccountingViewModel) {
         onNavigateToNewPurchase = { navigateTo(NavDestination.CreateInvoice("PURCHASE")) },
         onNavigateToVouchers = { navigateTo(NavDestination.VouchersList) },
         onNavigateToNewVoucher = { op ->
-          navigateTo(NavDestination.VouchersList)
+          if (op == "قيد يومي" || op == "قيد إفتتاحي") {
+            navigateTo(NavDestination.Journal(op))
+          } else {
+            navigateTo(NavDestination.VouchersList)
+          }
         },
         onNavigateToAccounts = { navigateTo(NavDestination.AccountsList) },
         onNavigateToAddAccount = { navigateTo(NavDestination.AccountsList) },
@@ -129,7 +220,11 @@ fun MohasebAppNavigation(viewModel: AccountingViewModel) {
         onNavigateToCurrencies = { navigateTo(NavDestination.Currencies) },
         onNavigateToReports = { r -> navigateTo(NavDestination.Reports(r)) },
         onNavigateToSettings = { navigateTo(NavDestination.Settings) },
-        onNavigateToNotifications = { navigateTo(NavDestination.Notifications) }
+        onNavigateToNotifications = { navigateTo(NavDestination.Notifications) },
+        onNavigateToDocuments = { t -> navigateTo(NavDestination.DocumentList(t)) },
+        onBackupRequested = onBackupRequested,
+        onRestoreRequested = onRestoreRequested,
+        onExitRequested = onExitRequested
       )
     }
 
@@ -138,7 +233,8 @@ fun MohasebAppNavigation(viewModel: AccountingViewModel) {
         invoiceType = "SALE",
         viewModel = viewModel,
         onBack = { navigateBack() },
-        onAddNew = { navigateTo(NavDestination.CreateInvoice("SALE")) }
+        onAddNew = { navigateTo(NavDestination.CreateInvoice("SALE")) },
+        onEdit = { id -> navigateTo(NavDestination.CreateInvoice("SALE", id)) }
       )
     }
 
@@ -147,13 +243,15 @@ fun MohasebAppNavigation(viewModel: AccountingViewModel) {
         invoiceType = "PURCHASE",
         viewModel = viewModel,
         onBack = { navigateBack() },
-        onAddNew = { navigateTo(NavDestination.CreateInvoice("PURCHASE")) }
+        onAddNew = { navigateTo(NavDestination.CreateInvoice("PURCHASE")) },
+        onEdit = { id -> navigateTo(NavDestination.CreateInvoice("PURCHASE", id)) }
       )
     }
 
     is NavDestination.CreateInvoice -> {
       CreateInvoiceScreen(
         invoiceType = screen.type,
+        editInvoiceId = screen.editId,
         viewModel = viewModel,
         onBack = { navigateBack() }
       )
@@ -206,6 +304,26 @@ fun MohasebAppNavigation(viewModel: AccountingViewModel) {
     is NavDestination.Settings -> {
       SettingsScreen(
         viewModel = viewModel,
+        onBack = { navigateBack() },
+        onBackupRequested = onBackupRequested,
+        onRestoreRequested = onRestoreRequested
+      )
+    }
+
+    is NavDestination.DocumentList -> {
+      InvoicesListScreen(
+        invoiceType = screen.type,
+        viewModel = viewModel,
+        onBack = { navigateBack() },
+        onAddNew = { navigateTo(NavDestination.CreateInvoice(screen.type)) },
+        onEdit = { id -> navigateTo(NavDestination.CreateInvoice(screen.type, id)) }
+      )
+    }
+
+    is NavDestination.Journal -> {
+      JournalScreen(
+        initialType = screen.type,
+        viewModel = viewModel,
         onBack = { navigateBack() }
       )
     }
@@ -217,6 +335,7 @@ fun MohasebAppNavigation(viewModel: AccountingViewModel) {
       )
     }
       }
+      SnackbarHost(globalSnackbar, modifier = Modifier.align(Alignment.BottomCenter))
     }
   }
 }

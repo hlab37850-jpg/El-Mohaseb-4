@@ -1,5 +1,13 @@
 package com.example.ui.screens
 
+import com.example.data.repository.OperationLineRequest
+import com.example.data.model.ItemEntity
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
+import com.example.ui.util.ListTables
+import com.example.ui.util.rememberExportActions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -71,6 +79,10 @@ fun WarehouseOperationsScreen(
   onBack: () -> Unit
 ) {
   val operations by viewModel.allOperations.collectAsState()
+  val exports = rememberExportActions(viewModel)
+  val allItems by viewModel.allItems.collectAsState()
+  val stockRows by viewModel.allWarehouseStock.collectAsState()
+  val opLines by viewModel.allOperationLines.collectAsState()
   val warehouses by viewModel.allWarehouses.collectAsState()
   val activeWarehouse by viewModel.activeWarehouse.collectAsState()
 
@@ -120,7 +132,7 @@ fun WarehouseOperationsScreen(
           }
         },
         actions = {
-          IconButton(onClick = { viewModel.showMessage("تصدير تقرير العمليات المخزنية كـ PDF...") }) {
+          IconButton(onClick = { exports.pdf(ListTables.operations(filteredOps)) }) {
             Box(
               modifier = Modifier
                 .size(28.dp)
@@ -246,28 +258,36 @@ fun WarehouseOperationsScreen(
     }
   }
 
-  // Dialog: New Warehouse Operation matching video (01:18 - 01:46)
+  // Dialog: new stock operation with real item lines (updates per-warehouse stock)
   if (showNewOpDialog) {
     var opType by remember { mutableStateOf("توريد مخزني") }
     var selectedWh by remember { mutableStateOf(activeWarehouse) }
-    var targetWh by remember { mutableStateOf(warehouses.lastOrNull()?.name ?: "مخزن فرع المبيعات") }
+    var targetWh by remember { mutableStateOf(warehouses.lastOrNull()?.name ?: "") }
     var partyInput by remember { mutableStateOf("") }
-    var itemsCountInput by remember { mutableStateOf("1") }
-    var totalCostInput by remember { mutableStateOf("0.0") }
     var notesInput by remember { mutableStateOf("") }
+    var whMenu by remember { mutableStateOf(false) }
+    var targetMenu by remember { mutableStateOf(false) }
+    var itemMenu by remember { mutableStateOf(false) }
+    val lineItems = remember { mutableStateListOf<Pair<ItemEntity, String>>() }
+
+    val qtyLabel = when {
+      opType.contains("تسوية") -> "التغيير (+ زيادة / - نقص)"
+      opType.contains("جرد") -> "الكمية المجرودة فعليًا"
+      else -> "الكمية"
+    }
 
     AlertDialog(
       onDismissRequest = { showNewOpDialog = false },
       title = { Text("تسجيل عملية مخزنية جديدة", fontWeight = FontWeight.Bold, color = MohasebPrimaryBlue) },
       text = {
-        Column {
+        Column(modifier = Modifier.verticalScroll(rememberScrollState())) {
           Text("نوع العملية:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
           Spacer(modifier = Modifier.height(4.dp))
           Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()),
             horizontalArrangement = Arrangement.spacedBy(4.dp)
           ) {
-            listOf("توريد مخزني", "صرف مخزني", "تحويل مخزني").forEach { type ->
+            listOf("توريد مخزني", "صرف مخزني", "تحويل مخزني", "تسوية مخزنية", "جرد مخزني").forEach { type ->
               val isSel = type == opType
               Box(
                 modifier = Modifier
@@ -276,37 +296,38 @@ fun WarehouseOperationsScreen(
                   .clickable { opType = type }
                   .padding(horizontal = 8.dp, vertical = 6.dp)
               ) {
-                Text(
-                  text = type,
-                  color = if (isSel) Color.White else Color.Black,
-                  fontSize = 11.sp,
-                  fontWeight = FontWeight.Medium
-                )
+                Text(type, color = if (isSel) Color.White else Color.Black, fontSize = 11.sp, fontWeight = FontWeight.Medium)
               }
             }
           }
 
           Spacer(modifier = Modifier.height(8.dp))
-
-          OutlinedTextField(
-            value = selectedWh,
-            onValueChange = { selectedWh = it },
-            label = { Text("من مخزن") },
-            modifier = Modifier.fillMaxWidth()
-          )
+          Box {
+            OutlinedButton(onClick = { whMenu = true }, modifier = Modifier.fillMaxWidth()) {
+              Text("المخزن: $selectedWh")
+            }
+            DropdownMenu(expanded = whMenu, onDismissRequest = { whMenu = false }) {
+              warehouses.forEach { w ->
+                DropdownMenuItem(text = { Text(w.name) }, onClick = { selectedWh = w.name; whMenu = false })
+              }
+            }
+          }
 
           if (opType.contains("تحويل")) {
             Spacer(modifier = Modifier.height(6.dp))
-            OutlinedTextField(
-              value = targetWh,
-              onValueChange = { targetWh = it },
-              label = { Text("إلى مخزن") },
-              modifier = Modifier.fillMaxWidth()
-            )
+            Box {
+              OutlinedButton(onClick = { targetMenu = true }, modifier = Modifier.fillMaxWidth()) {
+                Text(if (targetWh.isBlank()) "إلى مخزن *" else "إلى مخزن: $targetWh")
+              }
+              DropdownMenu(expanded = targetMenu, onDismissRequest = { targetMenu = false }) {
+                warehouses.filter { it.name != selectedWh }.forEach { w ->
+                  DropdownMenuItem(text = { Text(w.name) }, onClick = { targetWh = w.name; targetMenu = false })
+                }
+              }
+            }
           }
 
           Spacer(modifier = Modifier.height(6.dp))
-
           OutlinedTextField(
             value = partyInput,
             onValueChange = { partyInput = it },
@@ -314,28 +335,47 @@ fun WarehouseOperationsScreen(
             modifier = Modifier.fillMaxWidth()
           )
 
-          Spacer(modifier = Modifier.height(6.dp))
-
-          Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-          ) {
-            OutlinedTextField(
-              value = itemsCountInput,
-              onValueChange = { itemsCountInput = it },
-              label = { Text("عدد المواد") },
-              modifier = Modifier.weight(1f)
-            )
-            OutlinedTextField(
-              value = totalCostInput,
-              onValueChange = { totalCostInput = it },
-              label = { Text("إجمالي التكلفة") },
-              modifier = Modifier.weight(1f)
-            )
+          Spacer(modifier = Modifier.height(10.dp))
+          Text("الأصناف:", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+          lineItems.forEachIndexed { index, line ->
+            val available = stockRows.firstOrNull { it.itemId == line.first.id && it.warehouseName == selectedWh }?.quantity ?: 0.0
+            Row(
+              modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+              verticalAlignment = Alignment.CenterVertically,
+              horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+              Column(modifier = Modifier.weight(1.3f)) {
+                Text(line.first.name, fontSize = 12.5.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                Text("المتاح: %,.2f".format(available), fontSize = 10.5.sp, color = Color(0xFF64748B))
+              }
+              OutlinedTextField(
+                value = line.second,
+                onValueChange = { lineItems[index] = line.first to it },
+                label = { Text(qtyLabel, fontSize = 9.sp, maxLines = 1) },
+                singleLine = true,
+                modifier = Modifier.weight(1f)
+              )
+              IconButton(onClick = { lineItems.removeAt(index) }, modifier = Modifier.size(28.dp)) {
+                Icon(Icons.Default.Delete, contentDescription = "حذف", tint = Color.Red, modifier = Modifier.size(18.dp))
+              }
+            }
+          }
+          Box {
+            OutlinedButton(onClick = { itemMenu = true }, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+              Icon(Icons.Default.Add, contentDescription = null, modifier = Modifier.size(16.dp))
+              Text(" إضافة صنف")
+            }
+            DropdownMenu(expanded = itemMenu, onDismissRequest = { itemMenu = false }) {
+              allItems.filter { candidate -> lineItems.none { it.first.id == candidate.id } }.forEach { item ->
+                DropdownMenuItem(
+                  text = { Text("${item.name} (${item.code})") },
+                  onClick = { lineItems.add(item to ""); itemMenu = false }
+                )
+              }
+            }
           }
 
           Spacer(modifier = Modifier.height(6.dp))
-
           OutlinedTextField(
             value = notesInput,
             onValueChange = { notesInput = it },
@@ -347,18 +387,22 @@ fun WarehouseOperationsScreen(
       confirmButton = {
         TextButton(
           onClick = {
-            val count = itemsCountInput.toIntOrNull() ?: 1
-            val cost = totalCostInput.toDoubleOrNull() ?: 0.0
-            viewModel.addWarehouseOperation(
-              opType = opType,
-              warehouse = selectedWh,
-              toWarehouse = if (opType.contains("تحويل")) targetWh else "",
-              party = partyInput,
-              notes = notesInput,
-              totalItems = count,
-              totalCost = cost
-            ) {
-              showNewOpDialog = false
+            val parsed = lineItems.map { (item, text) -> item to text.trim().replace(',', '.').toDoubleOrNull() }
+            if (parsed.isEmpty()) {
+              viewModel.showMessage("أضف صنفًا واحدًا على الأقل")
+            } else if (parsed.any { it.second == null }) {
+              viewModel.showMessage("أدخل كمية صالحة لكل صنف")
+            } else {
+              viewModel.addStockOperation(
+                opType = opType,
+                warehouse = selectedWh,
+                toWarehouse = targetWh,
+                party = partyInput,
+                notes = notesInput,
+                lines = parsed.map { OperationLineRequest(it.first.id, it.second ?: 0.0) }
+              ) {
+                showNewOpDialog = false
+              }
             }
           },
           modifier = Modifier.testTag("submit_wh_op_button")
@@ -386,6 +430,10 @@ fun WarehouseOperationsScreen(
           if (op.partyOrAccount.isNotBlank()) Text("الطرف المعني: ${op.partyOrAccount}", fontSize = 13.sp)
           Text("التاريخ: ${op.date}", fontSize = 12.5.sp, color = Color.Gray)
           Text("عدد الأصناف: ${op.totalItems} • إجمالي التكلفة: %,.0f ر.ي".format(op.totalCost), fontSize = 13.5.sp, fontWeight = FontWeight.Bold)
+          opLines.filter { it.operationId == op.id }.forEach { line ->
+            val shown = if (op.operationType.contains("جرد")) line.quantity else if (op.operationType.contains("تسوية")) line.sourceDelta else kotlin.math.abs(line.sourceDelta)
+            Text("• ${line.itemName}: %,.2f".format(shown), fontSize = 12.5.sp)
+          }
           if (op.notes.isNotBlank()) Text("ملاحظات: ${op.notes}", fontSize = 12.sp, color = Color.Gray)
         }
       },

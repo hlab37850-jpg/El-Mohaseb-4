@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.ui.util.ListTables
+import com.example.ui.util.rememberExportActions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -66,6 +68,7 @@ fun AccountsScreen(
   onBack: () -> Unit
 ) {
   val accounts by viewModel.allAccounts.collectAsState()
+  val exports = rememberExportActions(viewModel)
   var showAddDialog by remember { mutableStateOf(false) }
   var selectedAccountForDetails by remember { mutableStateOf<AccountEntity?>(null) }
   var accountToEdit by remember { mutableStateOf<AccountEntity?>(null) }
@@ -98,7 +101,7 @@ fun AccountsScreen(
           }
         },
         actions = {
-          IconButton(onClick = { viewModel.showMessage("تصدير دليل الحسابات إلى PDF...") }) {
+          IconButton(onClick = { exports.pdf(ListTables.accounts(filteredAccounts)) }) {
             Box(
               modifier = Modifier
                 .size(28.dp)

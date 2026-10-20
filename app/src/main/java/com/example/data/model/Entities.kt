@@ -113,3 +113,48 @@ data class AppSettingEntity(
   @PrimaryKey val settingKey: String,
   val settingValue: String
 )
+
+
+@Entity(tableName = "journal_entries")
+data class JournalEntryEntity(
+  @PrimaryKey(autoGenerate = true) val id: Long = 0,
+  val entryNumber: String,
+  val entryType: String, // "DAILY" (قيد يومي) or "OPENING" (قيد افتتاحي)
+  val debitAccount: String,
+  val creditAccount: String,
+  val amount: Double,
+  val currency: String = "محلي",
+  val date: String,
+  val statement: String = ""
+)
+
+@Entity(tableName = "reminders")
+data class ReminderEntity(
+  @PrimaryKey(autoGenerate = true) val id: Long = 0,
+  val title: String,
+  val date: String,
+  val time: String,
+  val note: String = "",
+  val phone: String = "",
+  val isDone: Boolean = false
+)
+
+
+@Entity(tableName = "warehouse_stock", primaryKeys = ["itemId", "warehouseName"])
+data class WarehouseStockEntity(
+  val itemId: Long,
+  val warehouseName: String,
+  val quantity: Double
+)
+
+@Entity(tableName = "warehouse_operation_lines")
+data class WarehouseOperationLineEntity(
+  @PrimaryKey(autoGenerate = true) val id: Long = 0,
+  val operationId: Long,
+  val itemId: Long,
+  val itemName: String,
+  val quantity: Double,
+  val sourceDelta: Double, // change applied to the operation's warehouse
+  val targetDelta: Double, // change applied to the target warehouse (transfers only)
+  val unitCost: Double
+)

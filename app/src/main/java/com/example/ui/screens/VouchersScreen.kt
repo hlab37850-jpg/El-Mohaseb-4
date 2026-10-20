@@ -1,5 +1,7 @@
 package com.example.ui.screens
 
+import com.example.ui.util.ListTables
+import com.example.ui.util.rememberExportActions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -76,6 +78,7 @@ fun VouchersScreen(
   onBack: () -> Unit
 ) {
   val vouchers by viewModel.allVouchers.collectAsState()
+  val exports = rememberExportActions(viewModel)
   val accounts by viewModel.allAccounts.collectAsState()
 
   var selectedTab by remember { mutableIntStateOf(0) } // 0: All, 1: Receipt (قبض), 2: Payment (صرف)
@@ -122,7 +125,7 @@ fun VouchersScreen(
           }
         },
         actions = {
-          IconButton(onClick = { viewModel.showMessage("تصدير كشف السندات كـ PDF...") }) {
+          IconButton(onClick = { exports.pdf(ListTables.vouchers(filteredVouchers)) }) {
             Box(
               modifier = Modifier
                 .size(28.dp)

@@ -1,5 +1,13 @@
 package com.example.ui.screens
 
+import com.example.ui.util.listSetting
+import com.example.ui.util.SuggestionRow
+import com.example.ui.util.DEFAULT_UNITS
+import com.example.ui.util.DEFAULT_CATEGORIES
+import com.example.ui.util.SettingKeys
+import androidx.compose.material.icons.filled.QrCode
+import com.example.ui.util.ListTables
+import com.example.ui.util.rememberExportActions
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -65,6 +73,11 @@ fun ItemsScreen(
   onBack: () -> Unit
 ) {
   val items by viewModel.allItems.collectAsState()
+  val exports = rememberExportActions(viewModel)
+  val savedSettings by viewModel.allSettings.collectAsState()
+  val categorySuggestions = (savedSettings.listSetting(SettingKeys.CATEGORIES, DEFAULT_CATEGORIES) +
+    savedSettings.listSetting(SettingKeys.GROUPS, emptyList())).distinct()
+  val unitSuggestions = savedSettings.listSetting(SettingKeys.UNITS, DEFAULT_UNITS)
   var searchQuery by remember { mutableStateOf("") }
   var showAddDialog by remember { mutableStateOf(false) }
   var selectedItemForDetails by remember { mutableStateOf<ItemEntity?>(null) }
@@ -94,7 +107,17 @@ fun ItemsScreen(
           }
         },
         actions = {
-          IconButton(onClick = { viewModel.showMessage("تصدير ملف إكسل لجميع الأصناف...") }) {
+          IconButton(onClick = { exports.barcodes(items) }) {
+            Box(
+              modifier = Modifier
+                .size(28.dp)
+                .background(Color(0xFF455A64), CircleShape),
+              contentAlignment = Alignment.Center
+            ) {
+              Icon(Icons.Default.QrCode, contentDescription = "باركود", tint = Color.White, modifier = Modifier.size(16.dp))
+            }
+          }
+          IconButton(onClick = { exports.excel(ListTables.items(items)) }) {
             Box(
               modifier = Modifier
                 .size(28.dp)
@@ -104,7 +127,7 @@ fun ItemsScreen(
               Icon(Icons.Default.Description, contentDescription = "Excel", tint = Color.White, modifier = Modifier.size(16.dp))
             }
           }
-          IconButton(onClick = { viewModel.showMessage("تصدير دليل الأصناف كـ PDF...") }) {
+          IconButton(onClick = { exports.pdf(ListTables.items(items)) }) {
             Box(
               modifier = Modifier
                 .size(28.dp)
@@ -295,6 +318,8 @@ fun ItemsScreen(
               modifier = Modifier.weight(1f)
             )
           }
+          SuggestionRow("المجموعات", categorySuggestions) { itemCategory = it }
+          SuggestionRow("الوحدات", unitSuggestions) { itemUnit = it }
           Spacer(modifier = Modifier.height(6.dp))
           Row(
             modifier = Modifier.fillMaxWidth(),
@@ -454,6 +479,8 @@ fun ItemsScreen(
               modifier = Modifier.weight(1f)
             )
           }
+          SuggestionRow("المجموعات", categorySuggestions) { category = it }
+          SuggestionRow("الوحدات", unitSuggestions) { unit = it }
           Spacer(modifier = Modifier.height(6.dp))
           Row(
             modifier = Modifier.fillMaxWidth(),
