@@ -249,7 +249,7 @@ fun AccordionSection(
               .fillMaxWidth()
               .clickable { onItemClick(subItem) }
               .padding(horizontal = 16.dp, vertical = 13.dp)
-              .testTag("item_${subItem.replace(\" \", \"_\")}"),
+              .testTag("item_" + subItem.replace(" ", "_")),
             contentAlignment = Alignment.CenterEnd
           ) {
             Text(
